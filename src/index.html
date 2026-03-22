@@ -3,10 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SyncBoard - Alpha</title>
+    <title>SyncBoard Alpha</title>
+    <script src="js/canvas_manager.js" defer></script>
+    <style type="text/css">
+        canvas {
+            border: solid 2px black;
+            width: 90vw;
+            height: 90vh;
+        }
+    </style>
 </head>
 <body>
-    Lorem, ipsum dolor sit amet consectetur adipisicing elit. Dolore minima laborum, natus necessitatibus ipsam deleniti suscipit dolor aut molestiae, 
-    esse temporibus, id quos soluta perspiciatis? Sed eligendi autem vel aliquid. 
+    <div>
+        <canvas id="boardCanvas"></canvas><br>
+        Brush size <input type="range" id="brushSize" min="1" max="20" step="1" value="3"> 
+        Brush color <input type="color" id="brushColor">
+        <button id="clearButton">Clear</button>
+    </div>
+    <br>
+    <p style="text-align: center">Lorem, ipsum dolor sit amet consectetur adipisicing elit. 
+    Dolore minima laborum, natus necessitatibus ipsam deleniti suscipit dolor aut molestiae, 
+    esse temporibus, id quos soluta perspiciatis? Sed eligendi autem vel aliquid.</p>
 </body>
 </html>
