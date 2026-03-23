@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://unpkg.com/konva@10/konva.min.js"></script>
-    <!-- <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script> -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 
     <style>
         body,html {
             margin: 0;
             padding: 0;
+            overflow: hidden;
         }
         #container {
             width: 100vw; height: 100vh;
@@ -79,7 +80,26 @@
         let painting = false;
         let current;
 
+        let activePointers = new Set(); // perche' il maledetto pointerdown non mi da accesso a evt.touches, devo gestirmi io i pointer attivi
+
         stage.on('pointerdown', (e) => {
+            activePointers.add(e.evt.pointerId);
+            if (activePointers.size > 1) {
+                if (current) {
+                    current.destroy();
+                    current = null;
+                    layer.batchDraw();
+                }
+                return;
+            }
+
+            // if (touches && touches.length !== 1) 
+            // {
+            //     e.evt.preventDefault();
+            //     painting = false;
+            //     return;
+            // }
+
             if (e.evt.button !== 0) return;
             painting = true;
             const pos = stage.getPointerPosition();
@@ -108,7 +128,7 @@
         stage.on('touchmove', (event) => {
             event.evt.preventDefault();
 
-            const touches = e.evt.touches;
+            const touches = event.evt.touches;
             if (touches.length === 2) {
                 painting = false;
 
@@ -123,7 +143,7 @@
 
                 const c = {
                     x: (p1.x + p2.x) / 2,
-                    y: (p2.y + p2.y) / 2
+                    y: (p1.y + p2.y) / 2
                 };
 
                 const d = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
@@ -134,15 +154,35 @@
                     return;
                 }
                 
+                const old = layer.scaleX();
                 const s = layer.scaleX() * (d / ld);
                 layer.scale({x: s, y: s});
                 
-                const dx = (lc.x - layer.yayer.x()) * layer.scaleX();
-                
+                const dx = (lc.x - layer.x()) / old;
+                const dy = (lc.y - layer.y()) / old;
+                layer.x(c.x - dx * s);
+                layer.y(c.y - dy * s);
+                layer.batchDraw();
+                lc = c;
+                ld = d;
             }
         })
 
+        stage.on('touchend', (event) => {
+            lc = null;
+            ld = 0;
+        })
+
         stage.on('pointermove', (e) => {
+            // const touches = e.evt.touches;
+            // if (touches && touches.length > 1) {
+            //     painting = false;
+            //     return;
+            // }
+            if (activePointers.size > 1) {
+                painting = false;
+                return;
+            }
             if (!painting) return;
             
             const pos = stage.getPointerPosition();
@@ -176,17 +216,21 @@
             }
         });
 
-        stage.on('pointerup', () => {
+        stage.on('pointerup', (e) => {
+            activePointers.delete(e.evt.pointerId);
             painting = false;
             // if (current) {
             //     current.tension(0.35);
             // }
+            activePointers.delete(e.evt.pointerId);
+            painting = false;
             if (current && tool.value === 'evidenziatore') {
                 current.globalCompositeOperation('multiply');
             }
         });
 
-        stage.on('pointerleave', () => {
+        stage.on('pointerleave', (e) => {
+            activePointers.delete(e.evt.pointerId);
             painting = false;
         });
 
