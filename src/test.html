@@ -25,16 +25,30 @@
         <option value="gomma">🧽</option>
         <option value="evidenziatore">🖍️</option>
     </select>
-    Brush size <input type="range" id="brushSize" min="1" max="20" step="1" value="3"> 
-    Brush color <input type="color" id="brushColor">
-    <button id="clearButton">Clear</button>
+    <span id="tool_menu"> <!--NOTE: default selection is 'pennello' aka brush -->
+        Brush size <input type="range" id="tool_size" min="1" max="20" step="1" value="3"> 
+        Brush color <input type="color" id="tool_color">
+    </span> 
+    <button id="clear_button">Clear</button>
     <div id="container" style="border: 2px solid black"></div>
 
     <script>
+        const DEFAULT_BRUSH_COLOR = "#000000"; // black
+        const DEFAULT_HIGHLIGHTER_COLOR = "#FFFF00"; // yellow
+        const DEFAULT_BRUSH_SIZE = 3;
+        const DEFAULT_HIGHLIGHTER_SIZE = 30;
+        
+        let brush_color = DEFAULT_BRUSH_COLOR;
+        let brush_size = DEFAULT_BRUSH_SIZE;
+
+        let highlighter_color = DEFAULT_HIGHLIGHTER_COLOR;
+        let highlighter_size = DEFAULT_HIGHLIGHTER_SIZE;
+
         let panning = false;
         let panStart = { x: 0, y: 0 };
         const SIZE = 10000;
         const tool = document.getElementById("tool");
+        const clear_btn = document.getElementById("clear_button");
         const stage = new Konva.Stage({
             container: 'container',
             width: window.innerWidth,
@@ -44,10 +58,28 @@
         const layer = new Konva.Layer();
         stage.add(layer);
 
+        init_tool_input();
+        clear_btn.addEventListener("click", () => layer.destroyChildren());
+        
+        tool.addEventListener("input", () => {
+            let span_elem = document.getElementById("tool_menu");
+            switch (tool.value) {
+                case 'pennello':
+                    span_elem.innerHTML = `Brush size <input type="range" id="tool_size" min="1" max="20" step="1" value="${brush_size}"> Brush color <input type="color" id="tool_color" value="${brush_color}">`;
+                    break;
+                case 'evidenziatore':
+                    span_elem.innerHTML = `Highlighter size <input type="range" id="tool_size" min="5" max="50" step="1" value="${highlighter_size}"> Highlighter color <input type="color" id="tool_color" value="${highlighter_color}">`;
+                    break;
+                case 'gomma':
+                    span_elem.innerHTML = `Eraser size <input type="range" id="tool_size" min="1" max="20" step="1" value="3">`; // update value with eraser size once implemented
+            }
+            init_tool_input(); // update color_picker and size_selector references and listeners accordingly
+        });
+
         let painting = false;
         let current;
 
-        stage.on('mousedown pointerdown', (e) => {
+        stage.on('pointerdown', (e) => {
             if (e.evt.button !== 0) return;
             painting = true;
             const pos = stage.getPointerPosition();
@@ -59,23 +91,58 @@
             if (tool.value === 'gomma') return;
             const evidenziatore = tool.value === 'evidenziatore';
             current = new Konva.Line({
-                stroke: evidenziatore ? 'yellow' : 'black',
-                strokeWidth: evidenziatore ? 30 : 3,
+                stroke: evidenziatore ? highlighter_color : brush_color,
+                strokeWidth: evidenziatore ? highlighter_size : brush_size,
                 lineCap: evidenziatore ? 'square' : 'round', // change to square if evidenziatore
                 lineJoin: 'round',
                 opacity: evidenziatore ? 0.2 : 1,
                 tension: evidenziatore ? 0 : 0.35, // 0 if evidenziatore
-                // points: evidenziatore ? [pos.x, pos.y] : [pos.x, pos.y, pos.x, pos.y]
-                points: [wp.x, wp.y]
+                points: evidenziatore ? [wp.x, wp.y] : [wp.x, wp.y, wp.x, wp.y]
             });
             layer.add(current); 
         });
+        
+        let lc = null;
+        let ld = 0;
 
         stage.on('touchmove', (event) => {
             event.evt.preventDefault();
+
+            const touches = e.evt.touches;
+            if (touches.length === 2) {
+                painting = false;
+
+                const p1 = {
+                    x: touches[0].clientX,
+                    y: touches[0].clientY
+                };
+                const p2 = {
+                    x: touches[1].clientX,
+                    y: touches[1].clientY
+                };
+
+                const c = {
+                    x: (p1.x + p2.x) / 2,
+                    y: (p2.y + p2.y) / 2
+                };
+
+                const d = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
+
+                if (!lc) {
+                    lc = c;
+                    ld = d;
+                    return;
+                }
+                
+                const s = layer.scaleX() * (d / ld);
+                layer.scale({x: s, y: s});
+                
+                const dx = (lc.x - layer.yayer.x()) * layer.scaleX();
+                
+            }
         })
 
-        stage.on('mousemove pointermove', (e) => {
+        stage.on('pointermove', (e) => {
             if (!painting) return;
             
             const pos = stage.getPointerPosition();
@@ -109,7 +176,7 @@
             }
         });
 
-        stage.on('mouseup pointerup', () => {
+        stage.on('pointerup', () => {
             painting = false;
             // if (current) {
             //     current.tension(0.35);
@@ -119,7 +186,7 @@
             }
         });
 
-        stage.on('mouseleave pointerleave', () => {
+        stage.on('pointerleave', () => {
             painting = false;
         });
 
@@ -130,6 +197,10 @@
                 panStart = { x: e.clientX - layer.x(), y: e.clientY - layer.y() };
                 e.preventDefault();
             }
+        })
+
+        stage.container().addEventListener('contextmenu', (e) => { // prevent default right-click behaviour
+            e.preventDefault();
         })
 
         window.addEventListener('mousemove', (e) => {
@@ -150,6 +221,8 @@
             stage.height(window.innerHeight);
         });
 
+        
+
         stage.container().addEventListener('wheel', (e) => {
             e.preventDefault();
             const scalefactor = 1.1;
@@ -167,6 +240,20 @@
             layer.y(pointer.y - wy * newscale);
             layer.batchDraw();
         }, { passive: false });
+
+        function init_tool_input() {
+            color_picker = document.getElementById("tool_color");
+            size_selector = document.getElementById("tool_size");
+            size_selector.addEventListener("input", () => {
+                if (tool.value == 'pennello') brush_size = size_selector.value;
+                else if (tool.value == 'gomma') return; // change after eraser size implementation
+                else highlighter_size = size_selector.value;
+            });
+            color_picker.addEventListener("input", () => {
+                if (tool.value == 'pennello') brush_color = color_picker.value;
+                else highlighter_color = color_picker.value;
+            });
+        }
     </script>
 </body>
 
