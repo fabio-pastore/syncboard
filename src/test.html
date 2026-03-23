@@ -10,20 +10,30 @@
             margin: 0;
             padding: 0;
         }
+        #container {
+            width: 100vw; height: 100vh;
+            overflow: hidden;
+        }
     </style>
     
-    <title>Document</title>
+    <title>SyncBoard Alpha</title>
 </head>
 <body>
     <p>Test</p>
+    <select id="tool">
+        <option value="pennello">✏️</option>
+        <option value="gomma">🧽</option>
+    </select>
     <div id="container" style="border: 2px solid black"></div>
 
     <script>
+        const SIZE = 10000;
+        const tool = document.getElementById("tool");
         // es konva
         const stage = new Konva.Stage({
         container: 'container',
-        width: window.innerWidth,
-        height: window.innerHeight
+        width: SIZE,
+        height: SIZE
         });
 
         const layer = new Konva.Layer();
@@ -33,61 +43,66 @@
         let current;
 
         stage.on('mousedown touchstart', () => {
+
             painting = true;
-
             const pos = stage.getPointerPosition();
-            console.log(pos);
 
+            if (tool.value === 'gomma') return;
+            
             current = new Konva.Line({
                 stroke: 'black',
                 strokeWidth: 3,
                 lineCap: 'round',
                 lineJoin: 'round',
+                tension: 0.35,
                 points: [pos.x, pos.y]
             });
-
-            layer.add(current);
+            layer.add(current); 
         });
 
         stage.on('mousemove touchmove', () => {
             if (!painting) return;
 
             const pos = stage.getPointerPosition();
-            const temp = current.points().concat([pos.x, pos.y]);
-            current.points(temp);
-        })
+
+            if (tool.value === 'gomma') {
+                const shape = layer.getIntersection(pos);
+                if (shape && shape.getClassName() == 'Line') {
+                    shape.destroy();
+                    layer.batchDraw();
+                }
+
+                return;
+            }
+
+            const points = current.points();
+            console.log(points);
+
+            const lx = points[points.length - 2];
+            const ly = points[points.length - 1];
+            
+            const mx = pos.x - lx;
+            const my = pos.y - ly;
+
+            if (Math.sqrt(mx ** 2 + my ** 2) > 5) {
+                current.points(points.concat([pos.x, pos.y]));
+            }
+        });
 
         stage.on('mouseup touchend', () => {
             painting = false;
-        })
+            // if (current) {
+            //     current.tension(0.35);
+            // }
+        });
 
-        // Create a draggable rectangle
-        // const rect = new Konva.Rect({
-        //     x: 50,
-        //     y: 50,
-        //     width: 100,
-        //     height: 80,
-        //     fill: 'cornflowerblue',
-        //     shadowBlur: 5,
-        //     cornerRadius: 4,
-        //     draggable: true,
-        // });
-        // layer.add(rect);
+        stage.on('mouseleave pointerleave', () => {
+            painting = false;
+        });
 
-        // const text = new Konva.Text({
-        //     x: 200,
-        //     y: 350,
-        //     text: "SUSUSUSUSUS",
-        //     fontSize: 18,
-        //     fill: 'black',
-        //     align: 'center',
-        // });
-
-        // layer.add(text);
-
-        // Add event listener
-        rect.on('click tap', () => {
-            rect.fill(Konva.Util.getRandomColor());
+        window.addEventListener('resize', () => {
+            document.getElementById('container').style.width = window.innerWidth + 'px';
+            document.getElementById('container').style.height = window.innerHeight + 'px';
         });
     </script>
 </body>
