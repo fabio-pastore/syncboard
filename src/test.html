@@ -31,6 +31,8 @@
     <div id="container" style="border: 2px solid black"></div>
 
     <script>
+        let panning = false;
+        let panStart = { x: 0, y: 0 };
         const SIZE = 10000;
         const tool = document.getElementById("tool");
         const stage = new Konva.Stage({
@@ -45,10 +47,14 @@
         let painting = false;
         let current;
 
-        stage.on('mousedown pointerdown', () => {
-
+        stage.on('mousedown pointerdown', (e) => {
+            if (e.evt.button !== 0) return;
             painting = true;
             const pos = stage.getPointerPosition();
+            const wp = {
+                x: (pos.x - layer.x()) / layer.scaleX(),
+                y: (pos.y - layer.y()) / layer.scaleY()
+            }
 
             if (tool.value === 'gomma') return;
             const evidenziatore = tool.value === 'evidenziatore';
@@ -59,7 +65,8 @@
                 lineJoin: 'round',
                 opacity: evidenziatore ? 0.2 : 1,
                 tension: evidenziatore ? 0 : 0.35, // 0 if evidenziatore
-                points: evidenziatore ? [pos.x, pos.y] : [pos.x, pos.y, pos.x, pos.y]
+                // points: evidenziatore ? [pos.x, pos.y] : [pos.x, pos.y, pos.x, pos.y]
+                points: [wp.x, wp.y]
             });
             layer.add(current); 
         });
@@ -68,10 +75,14 @@
             event.evt.preventDefault();
         })
 
-        stage.on('mousemove pointermove', () => {
+        stage.on('mousemove pointermove', (e) => {
             if (!painting) return;
-
+            
             const pos = stage.getPointerPosition();
+            const wp = {
+                x: (pos.x - layer.x()) / layer.scaleX(),
+                y: (pos.y - layer.y()) / layer.scaleY()
+            }
 
             if (tool.value === 'gomma') {
                 const shape = layer.getIntersection(pos);
@@ -89,11 +100,11 @@
             const lx = points[points.length - 2];
             const ly = points[points.length - 1];
             
-            const mx = pos.x - lx;
-            const my = pos.y - ly;
+            const mx = wp.x - lx;
+            const my = wp.y - ly;
 
             if (Math.sqrt(mx ** 2 + my ** 2) >= 3) {
-                current.points(points.concat([pos.x, pos.y]));
+                current.points(points.concat([wp.x, wp.y]));
                 layer.batchDraw();
             }
         });
@@ -112,12 +123,50 @@
             painting = false;
         });
 
+        stage.container().addEventListener('mousedown', (e) => {
+            if (e.button === 1) e.preventDefault();
+            if (e.button === 2) {
+                panning = true;
+                panStart = { x: e.clientX - layer.x(), y: e.clientY - layer.y() };
+                e.preventDefault();
+            }
+        })
+
+        window.addEventListener('mousemove', (e) => {
+            if (!panning) return;
+            layer.x(e.clientX - panStart.x);
+            layer.y(e.clientY - panStart.y);
+            layer.batchDraw();
+        })
+
+        window.addEventListener('mouseup', (e) => {
+            if (e.button === 2) panning = false;
+        })
+
         window.addEventListener('resize', () => {
             // document.getElementById('container').style.width = window.innerWidth + 'px';
             // document.getElementById('container').style.height = window.innerHeight + 'px';
             stage.width(window.innerWidth);
             stage.height(window.innerHeight);
         });
+
+        stage.container().addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const scalefactor = 1.1;
+            const old = layer.scaleX();
+
+            const newscale = e.deltaY < 0 ? old * scalefactor : old / scalefactor;
+            
+            const pointer = stage.getPointerPosition();
+            const wx = (pointer.x - layer.x()) / old;
+            const wy = (pointer.y - layer.y()) / old;
+
+            layer.scale({ x: newscale, y: newscale });
+
+            layer.x(pointer.x - wx * newscale);
+            layer.y(pointer.y - wy * newscale);
+            layer.batchDraw();
+        }, { passive: false });
     </script>
 </body>
 
