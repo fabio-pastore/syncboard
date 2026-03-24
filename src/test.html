@@ -38,12 +38,15 @@
         const DEFAULT_HIGHLIGHTER_COLOR = "#FFFF00"; // yellow
         const DEFAULT_BRUSH_SIZE = 3;
         const DEFAULT_HIGHLIGHTER_SIZE = 30;
+        const DEFAULT_ERASER_SIZE = 5;
         
         let brush_color = DEFAULT_BRUSH_COLOR;
         let brush_size = DEFAULT_BRUSH_SIZE;
 
         let highlighter_color = DEFAULT_HIGHLIGHTER_COLOR;
         let highlighter_size = DEFAULT_HIGHLIGHTER_SIZE;
+
+        let eraser_size = DEFAULT_ERASER_SIZE;
 
         let panning = false;
         let panStart = { x: 0, y: 0 };
@@ -72,7 +75,7 @@
                     span_elem.innerHTML = `Highlighter size <input type="range" id="tool_size" min="5" max="50" step="1" value="${highlighter_size}"> Highlighter color <input type="color" id="tool_color" value="${highlighter_color}">`;
                     break;
                 case 'gomma':
-                    span_elem.innerHTML = `Eraser size <input type="range" id="tool_size" min="1" max="20" step="1" value="3">`; // update value with eraser size once implemented
+                    span_elem.innerHTML = `Eraser size <input type="range" id="tool_size" min="2" max="40" step="1" value="${eraser_size}">`; // update value with eraser size once implemented
             }
             init_tool_input(); // update color_picker and size_selector references and listeners accordingly
         });
@@ -113,6 +116,7 @@
             current = new Konva.Line({
                 stroke: evidenziatore ? highlighter_color : brush_color,
                 strokeWidth: evidenziatore ? highlighter_size : brush_size,
+                hitStrokeWidth: eraser_size, // define "hitbox" for eraser
                 lineCap: evidenziatore ? 'square' : 'round', // change to square if evidenziatore
                 lineJoin: 'round',
                 opacity: evidenziatore ? 0.2 : 1,
@@ -190,7 +194,8 @@
                 x: (pos.x - layer.x()) / layer.scaleX(),
                 y: (pos.y - layer.y()) / layer.scaleY()
             }
-
+            
+            // erasing
             if (tool.value === 'gomma') {
                 const shape = layer.getIntersection(pos);
                 if (shape && shape.getClassName() == 'Line') {
@@ -290,13 +295,21 @@
             size_selector = document.getElementById("tool_size");
             size_selector.addEventListener("input", () => {
                 if (tool.value == 'pennello') brush_size = size_selector.value;
-                else if (tool.value == 'gomma') return; // change after eraser size implementation
+                else if (tool.value == 'gomma') { // update 'hitStrokeWidth' property for all shapes in layer
+                    eraser_size = size_selector.value;
+                    layer.getChildren().forEach(shape => {
+                        shape.hitStrokeWidth(eraser_size)
+                    });
+                    layer.batchDraw();
+                }
                 else highlighter_size = size_selector.value;
             });
-            color_picker.addEventListener("input", () => {
-                if (tool.value == 'pennello') brush_color = color_picker.value;
-                else highlighter_color = color_picker.value;
-            });
+            if (color_picker) { // check if color picker is defined for the selected tool
+                color_picker.addEventListener("input", () => {
+                    if (tool.value == 'pennello') brush_color = color_picker.value;
+                    else highlighter_color = color_picker.value;
+                });
+            }
         }
     </script>
 </body>
