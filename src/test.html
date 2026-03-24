@@ -16,6 +16,14 @@
             width: 100vw; height: 100vh;
             overflow: hidden;
         }
+        #eraser-cursor {
+            position: fixed;
+            display: none;
+            border-radius: 50%;
+            border: 2px solid black;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
     </style>
     
     <title>SyncBoard Alpha</title>
@@ -32,7 +40,7 @@
     </span> 
     <button id="clear_button">Clear</button>
     <div id="container" style="border: 2px solid black"></div>
-
+    <div id="eraser-cursor"></div>
     <script>
         const DEFAULT_BRUSH_COLOR = "#000000"; // black
         const DEFAULT_HIGHLIGHTER_COLOR = "#FFFF00"; // yellow
@@ -47,6 +55,7 @@
         let highlighter_size = DEFAULT_HIGHLIGHTER_SIZE;
 
         let eraser_size = DEFAULT_ERASER_SIZE;
+        const eraserCursor = document.getElementById('eraser-cursor');
 
         let panning = false;
         let panStart = { x: 0, y: 0 };
@@ -261,6 +270,7 @@
 
         window.addEventListener('mouseup', (e) => {
             if (e.button === 2) panning = false;
+              
         })
 
         window.addEventListener('resize', () => {
@@ -311,6 +321,55 @@
                 });
             }
         }
+
+        let premendo = false;
+
+        // function updateEraserCursor(e) {
+        //     if (tool.value !== 'gomma') {
+        //         eraserCursor.style.display = 'none';
+        //         return;
+        //     }
+
+        //     const size = eraser_size;
+        //     eraserCursor.style.display = 'block';
+        //     eraserCursor.style.width = size + 'px';
+        //     eraserCursor.style.height = size + 'px';
+        //     eraserCursor.style.left = e.clientX + 'px';
+        //     eraserCursor.style.top = e.clientY + 'px';
+        // }
+        stage.container().addEventListener('pointermove', (e) => {
+            if (!premendo) return;
+            if (tool.value !== 'gomma') {
+                eraserCursor.style.display = 'none';
+                return;
+            }
+            const size = eraser_size;
+            eraserCursor.style.width = size + 'px';
+            eraserCursor.style.height = size + 'px';
+            eraserCursor.style.left = e.clientX + 'px';
+            eraserCursor.style.top = e.clientY + 'px';
+        });
+        stage.container().addEventListener('pointerdown', (e) => {
+            if (tool.value === 'gomma') {
+                premendo = true;
+                const size = eraser_size;
+                eraserCursor.style.display = 'block';
+                eraserCursor.style.width = size + 'px';
+                eraserCursor.style.height = size + 'px';
+                eraserCursor.style.left = e.clientX + 'px';
+                eraserCursor.style.top = e.clientY + 'px';
+            }
+        });
+
+        function hideEraserCursor() {
+            if (tool.value === 'gomma') {
+                eraserCursor.style.display = 'none';
+                premendo = false;
+            }  
+        }
+
+        stage.container().addEventListener('pointerleave', hideEraserCursor);
+        stage.container().addEventListener('pointerup', hideEraserCursor);
     </script>
 </body>
 
