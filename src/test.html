@@ -7,6 +7,11 @@
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 
     <style>
+        @keyframes fadeOut {
+            from {opacity: 1;}
+            to {opacity: 0;}
+        }
+
         body,html {
             margin: 0;
             padding: 0;
@@ -23,6 +28,22 @@
             border: 2px solid black;
             transform: translate(-50%, -50%);
             pointer-events: none;
+        }
+        .zoom-indicator {
+            position: fixed;
+            top: 50vh;
+            left: 50vw;
+            transform: translate(-50%, -50%);
+            color: black;
+            font-size: 20px;
+            font-family: Arial, Helvetica, sans-serif;
+            padding: 3px;
+            border: 2px solid black;
+            opacity: 0;
+            pointer-events: none;
+        }
+        .show-zoom-indicator {
+            animation: fadeOut 1s;
         }
     </style>
     
@@ -41,6 +62,7 @@
     <button id="clear_button">Clear</button>
     <div id="container" style="border: 2px solid black"></div>
     <div id="eraser-cursor"></div>
+    <div id="zoom-indicator" class="zoom-indicator"></div>
     <script>
         const DEFAULT_BRUSH_COLOR = "#000000"; // black
         const DEFAULT_HIGHLIGHTER_COLOR = "#FFFF00"; // yellow
@@ -57,6 +79,7 @@
         let eraser_size = DEFAULT_ERASER_SIZE;
         const eraserCursor = document.getElementById('eraser-cursor');
 
+        const zoomIndicator = document.getElementById('zoom-indicator');
         let panning = false;
         let panStart = { x: 0, y: 0 };
         const SIZE = 10000;
@@ -288,6 +311,11 @@
             const old = layer.scaleX();
 
             const newscale = e.deltaY < 0 ? old * scalefactor : old / scalefactor;
+            zoomIndicator.innerText = Math.round(100 * newscale) + "%"
+
+            zoomIndicator.classList.remove("show-zoom-indicator");
+            zoomIndicator.getAnimations(); // refresh element animations
+            zoomIndicator.classList.add("show-zoom-indicator");
             
             const pointer = stage.getPointerPosition();
             const wx = (pointer.x - layer.x()) / old;
@@ -324,19 +352,6 @@
 
         let premendo = false;
 
-        // function updateEraserCursor(e) {
-        //     if (tool.value !== 'gomma') {
-        //         eraserCursor.style.display = 'none';
-        //         return;
-        //     }
-
-        //     const size = eraser_size;
-        //     eraserCursor.style.display = 'block';
-        //     eraserCursor.style.width = size + 'px';
-        //     eraserCursor.style.height = size + 'px';
-        //     eraserCursor.style.left = e.clientX + 'px';
-        //     eraserCursor.style.top = e.clientY + 'px';
-        // }
         stage.container().addEventListener('pointermove', (e) => {
             if (!premendo) return;
             if (tool.value !== 'gomma') {
@@ -370,6 +385,7 @@
 
         stage.container().addEventListener('pointerleave', hideEraserCursor);
         stage.container().addEventListener('pointerup', hideEraserCursor);
+
     </script>
 </body>
 
