@@ -6,6 +6,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const authRoutes = require('./routes/auth');
+const boardRoutes = require('./routes/boards');
+const folderRoutes = require('./routes/folders');
 const authMiddleware = require('./middleware/auth');
 
 const app = express();
@@ -18,6 +20,8 @@ app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
+app.use('/api/boards', boardRoutes);
+app.use('/api/folders', folderRoutes);
 
 app.get('/api/test', authMiddleware, async (req, res) => {
     const User = require('./models/Users');
@@ -25,13 +29,14 @@ app.get('/api/test', authMiddleware, async (req, res) => {
     res.status(200).json({ msg: "Authenticated request successful", user });
 });
 
-const SERVER_PORT = 8000;
-
-app.get("/", (req, res) => {
-    res.status(200).json({msg: "index response"});
-});
-
-app.listen(SERVER_PORT, () => {
-    console.info(`[SERVER] started listening on port ${SERVER_PORT}`)
-})
-
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => {
+        console.log('Connect to MongoDB');
+        const PORT = process.env.PORT || 3001;
+        server.listen(PORT, () => {
+            console.log(`Server running on http://localhost:${PORT}`);
+        });
+    })
+    .catch((err) => {
+        console.error('MongoDB connection error:', err);
+    });
