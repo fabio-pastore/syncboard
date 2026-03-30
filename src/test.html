@@ -45,6 +45,19 @@
         .show-zoom-indicator {
             animation: fadeOut 1s;
         }
+
+        #sb_title {
+            display: inline; 
+            position: fixed; 
+            right: 10px;
+            top: 2px;
+        }
+
+        @media screen and (max-width: 600px) {
+            #sb_title {
+                display: none;
+            }
+        }
     </style>
     
     <title>SyncBoard Alpha</title>
@@ -60,6 +73,7 @@
         Brush color <input type="color" id="tool_color">
     </span> 
     <button id="clear_button">Clear</button>
+    <h1 id="sb_title">SyncBoard Alpha</h1>
     <div id="container" style="border: 2px solid black"></div>
     <div id="eraser-cursor"></div>
     <div id="zoom-indicator" class="zoom-indicator"></div>
