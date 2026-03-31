@@ -21,9 +21,26 @@ router.get('/', async (req, res) => {
     }
 });
 
+// POST /api/boards/create
+router.post('/create', async (req, res) => {
+    try {
+        const { name, folder } = req.body;
+        if (!name) return res.status(400).json({ error: 'Name is required' });
+
+        const board = await Board.create({
+            owner: req.userId,
+            name,
+            folder: folder || null
+        });
+        res.status(201).json(board);
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
 // GET /api/boards/folder/:folderId
 
-router.get('/', async (req, res) => {
+router.get('/folder/:folderId', async (req, res) => {
     try {
         const boards = await Board.find({
             owner: req.userId,
@@ -54,12 +71,12 @@ router.get('/:id', async (req, res) => {
 });
 
 // PUT /api/boards/:id
-router.get('/:id', async (req, res) => {
+router.put('/:id', async (req, res) => {
     try {
         const {name, folder} = req.body;
         const board = await Board.findOneAndUpdate(
             {_id: req.params.id, owner: req.userId},
-            { ...(name & { name }), ...(folder !== undefined && { folder })},
+            { ...(name && { name }), ...(folder !== undefined && { folder })},
             { new: true }
         );
         if (!board) return res.status(404).json({ error: 'Board not found'});
@@ -77,6 +94,7 @@ router.delete('/:id', async (req, res) => {
             owner: req.userId
         });
         if (!board) return res.status(404).json({ error: 'Board not found'})
+        res.json({ message: 'Board deleted successfully'});
     } catch (err) {
         res.status(500).json( {error: 'Server error'});
     }

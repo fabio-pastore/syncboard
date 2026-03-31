@@ -70,26 +70,17 @@ async function deleteFolderRecursive(folderId, ownerId) {
   for (const sub of subfolders) {
     await deleteFolderRecursive(sub._id, ownerId);
   }
-  await Board.deleteMany({ folder: folderId, owner: ownerId }); // or updateMany to move to root
+  await Board.deleteMany({ folder: folderId, owner: ownerId }); // we can use updatemany to bring stuff to root instead
   await Folder.deleteOne({ _id: folderId, owner: ownerId });
 }
 
 // DELETE /api/folders/:id
 router.delete('/:id', async (req, res) => {
   try {
-    const folder = await Folder.findOneAndDelete({
-      _id: req.params.id,
-      owner: req.userId
-    });
+    const folder = await Folder.findOne({ _id: req.params.id, owner: req.userId });
     if (!folder) return res.status(404).json({ error: 'Folder not found' });
 
-    await Board.updateMany(
-      { folder: req.params.id, owner: req.userId },
-      { folder: null }
-    );
-    
-    await deleteFolderRecursive(req.params.id, req.userId);  // pare che funziona
-
+    await deleteFolderRecursive(req.params.id, req.userId); // deletes subfolders + their boards + this folder
     res.json({ message: 'Folder deleted' });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
