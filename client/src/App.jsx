@@ -15,6 +15,8 @@ export default function App() {
       <Route path='/login' element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
       <Route path='/signup' element={user ? <Navigate to="/dashboard" replace /> : <Signup />} />
       <Route path='/' element={<ProtectedRoute><Dashboard /></ProtectedRoute>} /> {/* this way the dashboard page is protected, and we need to be logged in to see it */}
+      <Route path="/board/:id" element={<ProtectedRoute><Board /></ProtectedRoute>} />
+      <Route path="/board/share/:token" element={<Board shared />} />
       <Route path='*' element={<Navigate to={user ? "/" : "/login"} replace />} /> {/* if the user tries to go to a page that doesn't exist, we redirect them to the dashboard if they're logged in, and to the login page if they're not */}
     </Routes>
   )
