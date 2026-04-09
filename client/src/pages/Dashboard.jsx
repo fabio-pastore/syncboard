@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../api';
-import { Home, ChevronRight, ArrowLeft, Plus, FolderOpen, Paintbrush, Pencil, Trash2, Inbox } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Home, ChevronRight, ArrowLeft, Plus, FolderOpen, Paintbrush, Pencil, Trash2, Inbox, X, Users } from 'lucide-react';
 
 export default function Dashboard() {
 
     const { user, logout } = useAuth();
+    const navigate = useNavigate();
     const [folders, setFolders] = useState([]);
     const [boards, setBoards] = useState([]);
+    const [sharedBoards, setSharedBoards] = useState([]);
     const [currentFolder, setCurrentFolder] = useState(null);
     const [folderPath, setFolderPath] = useState([]); // this is an array of folder ids that represents the path to the current folder, so we can easily navigate back up the folder tree
     const [newFolderName, setFolderName] = useState('');
@@ -21,12 +24,26 @@ export default function Dashboard() {
 
     async function loadContents() {
         try {
-            const [folders, boards] = await Promise.all([
+            const [folders, allBoards] = await Promise.all([
                 currentFolder ? apiFetch(`/folders/${currentFolder}/children`) : apiFetch('/folders'),
                 currentFolder ? apiFetch(`/boards/folder/${currentFolder}`) : apiFetch('/boards')
             ]);
             setFolders(folders);
-            setBoards(currentFolder ? boards : boards.filter((board) => !board.folder)) // if current folder is not null display boards in curr folder else display only boards that are not in a folder (i.e. in homepage)
+            if (currentFolder) {
+                setBoards(allBoards);
+                setSharedBoards([]);
+            } else {
+                const mine = allBoards.filter(b => {
+                    const ownerId = b.owner?._id || b.owner;
+                    return ownerId === user._id;
+                });
+                const shared = allBoards.filter(b => {
+                    const ownerId = b.owner?._id || b.owner;
+                    return ownerId !== user._id;
+                });
+                setBoards(mine.filter(b => !b.folder));
+                setSharedBoards(shared);
+            }
         } catch (error) {
             setError("Failed to load contents");
         }
@@ -382,7 +399,34 @@ export default function Dashboard() {
                 )}
 
                 {/* Empty state */}
-                {folders.length === 0 && boards.length === 0 && (
+                {/* Shared with me */}
+                {sharedBoards.length > 0 && !currentFolder && (
+                    <section className="mb-8">
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1">
+                            <Users size={12} /> Shared with me
+                        </h2>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                            {sharedBoards.map((board) => (
+                                <div
+                                    key={board._id}
+                                    className="group relative bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-violet-600 transition cursor-pointer"
+                                    onClick={() => navigate(`/board/${board._id}`)}
+                                >
+                                    <Paintbrush size={28} className="text-violet-400 mb-2" />
+                                    <p className="text-sm text-white truncate">{board.name}</p>
+                                    <p className="text-xs text-gray-500 mt-1">
+                                        by {board.owner?.username || 'unknown'}
+                                    </p>
+                                    <p className="text-xs text-gray-500">
+                                        {new Date(board.updatedAt).toLocaleDateString()}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {folders.length === 0 && boards.length === 0 && sharedBoards.length === 0 && (
                     <div className="text-center py-20 text-gray-500">
                         <Inbox size={48} className="mx-auto mb-4 text-gray-600" />
                         <p className="text-lg">

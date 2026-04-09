@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const Board = require('../models/Board');
 const authMiddleware = require('../middleware/auth')
 
@@ -11,10 +12,10 @@ router.get('/', async (req, res) => {
     try {
         const boards = await Board.find({
             $or : [
-                { owner : req.userId },             // userId l'ho salvato dall'autenticazione
+                { owner : req.userId },
                 { 'sharedWith.user': req.userId }
-            ]   // mi serve anche per file condivisi da altri utenti
-        }).sort({ updatedAt: -1 });
+            ]
+        }).populate('owner', 'username').sort({ updatedAt: -1 });
         res.json(boards);
     } catch (err) {
         res.status(500).json({ error: "Server error"});
@@ -61,7 +62,7 @@ router.get('/:id', async (req, res) => {
                 { owner: req.userId },
                 { 'sharedWith.user': req.userId}
             ]
-        });
+        }).populate('sharedWith.user', 'username');
         if (!board) return res.status(404).json({ error: 'Board not found'});
         res.json(board);
     }
@@ -85,6 +86,82 @@ router.put('/:id', async (req, res) => {
         res.status(500).json({error: 'Server error'});
     }
 })
+
+router.post('/:id/share/user', async (req, res) => {
+    try {
+        const { username, role } = req.body;
+        if (!['viewer', 'editor'].includes(role)) {
+            return res.status(400).json({ error: 'Invalid role' });
+        }
+        const board = await Board.findOne({ _id: req.params.id, owner: req.userId });
+        if (!board) return res.status(404).json({ error: 'Board not found' });
+
+        const User = require('../models/Users');
+        const targetUser = await User.findOne({ username });
+        if (!targetUser) return res.status(404).json({ error: 'User not found' });
+
+        if (targetUser._id.toString() === req.userId) {
+            return res.status(400).json({ error: 'Cannot share with yourself' });
+        }
+
+        const existingShare = board.sharedWith.find(s => s.user.toString() === targetUser._id.toString());
+        if (existingShare) {
+            existingShare.role = role;
+        } else {
+            board.sharedWith.push({ user: targetUser._id, role });
+        }
+        await board.save();
+        res.json({ message: 'Board shared successfully', userId: targetUser._id, username: targetUser.username, role });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// DELETE /api/boards/:id/share/user/:userId
+router.delete('/:id/share/user/:targetUserId', async (req, res) => {
+    try {
+        const board = await Board.findOne({ _id: req.params.id, owner: req.userId });
+        if (!board) return res.status(404).json({ error: 'Board not found' });
+        board.sharedWith = board.sharedWith.filter(s => s.user.toString() !== req.params.targetUserId);
+        await board.save();
+
+        // seems to work
+        const roomId = board._id.toString();
+        const room = req.io.sockets.adapter.rooms.get(roomId);
+        if (room) {
+            for (const sid of room) {
+                const s = req.io.sockets.sockets.get(sid);
+                if (s && s.data.userId === req.params.targetUserId) {
+                    s.emit('board:kicked', 'Your access was revoked by the owner');
+                    s.disconnect(true);
+                }
+            }
+        }
+
+        res.json({ message: 'Access revoked' });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// POST /api/boards/:id/share  (one-time link)
+router.post('/:id/share', async (req, res) => {
+    try {
+        const { role } = req.body;
+        if (!['viewer', 'editor'].includes(role)) {
+            return res.status(400).json({ error: 'Invalid role' });
+        }
+        const board = await Board.findOne({_id: req.params.id, owner: req.userId});
+        if (!board) return res.status(404).json({ error: 'Board not found' });
+
+        const shareToken = crypto.randomBytes(32).toString('hex');
+        board.shareTokens.push({ token: shareToken, role });
+        await board.save();
+        res.json({ shareToken });
+    } catch (err) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 
 // DELETE /api/boards/:id
 router.delete('/:id', async (req, res) => {
