@@ -183,7 +183,7 @@ export default function Board({ shared = false}) {
             color,
             strokeWidth: (toolRef.current === 'highlighter') ? highlighterSize : strokeWidth,
             opacity: (toolRef.current === 'highlighter') ? 0.3 : 1,
-            globalCompositeOperation: 'source-over',
+            globalCompositeOperation: (toolRef.current === 'highlighter') ? 'multiply' : 'source-over',
         };
         setLines((prev) => [...prev, newLine]);
     }, [canDraw, color, strokeWidth, highlighterSize]);
@@ -243,7 +243,6 @@ export default function Board({ shared = false}) {
 
         if (toolRef.current !== 'eraser') {
             const lastLine = linesRef.current[linesRef.current.length - 1];
-            if (toolRef.current === 'highlighter') lastLine.globalCompositeOperation = 'multiply';
             if (lastLine) {
                 setLastModifiedLines((prev) => {
 
@@ -521,8 +520,8 @@ export default function Board({ shared = false}) {
 
                         <div className="flex items-center justify-center w-7">
                             <div className="rounded-full bg-gray-800" style={{
-                                    width: Math.min(activeSize * (tool === 'eraser' ? 0.7 : 2.5), 22),
-                                    height: Math.min(activeSize * (tool === 'eraser' ? 0.7 : 2.5), 22),
+                                    width: Math.min(activeSize * ((tool === 'eraser' || tool === 'highlighter') ? 0.7 : 2.5), 22),
+                                    height: Math.min(activeSize * ((tool === 'eraser' || tool === 'highlighter') ? 0.7 : 2.5), 22),
                                 }}>
                                 
                             </div>
