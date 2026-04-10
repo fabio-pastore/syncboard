@@ -121,7 +121,12 @@ export default function Board({ shared = false}) {
             sock.on('board:draw:undo', ({lineId, op, line}) => {
                 if (op === 'draw') setLines((prev) => prev.filter((l) => l.id !== lineId));
                 else setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
-            })
+            });
+
+            sock.on('board:draw:redo', ({lineId, op, line}) => {
+                if (op === 'draw') setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
+                else setLines((prev) => prev.filter((l) => l.id !== lineId));
+            });
 
             sock.on('error', (message) => {
                 console.error("Socket error:", message);
@@ -246,32 +251,34 @@ export default function Board({ shared = false}) {
         if (!isDrawingRef.current) return;
         isDrawingRef.current = false;
 
-        if (toolRef.current !== 'eraser') {
-            const lastLine = linesRef.current[linesRef.current.length - 1];
-            if (toolRef.current === 'highlighter') {
-                setLines((prev) => {
-                    const updated = [...prev];
-                    const last = updated[updated.length - 1];
-                    last.globalCompositeOperation = 'destination-over';
-                    updated[updated.length - 1] = last;
-                    return updated;
-                })
-            }
-            if (lastLine) {
-                setEditHistory((prev) => {
+        if (toolRef.current === 'eraser') return;
 
-                    let newHistory;
+        const lastLine = linesRef.current[linesRef.current.length - 1];
+        if (!lastLine) return;
 
-                    if (prev.history.length < NUM_MAX_UNDO) {
-                        newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lastLine, op: "draw" }];
-                    }
-                    else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: lastLine, op: "draw" }]; 
-                    
-                    return {history: newHistory, editIndex: newHistory.length - 1};
-                });
-                socketRef.current?.emit('board:draw:line', lastLine);
-            }
+        if (toolRef.current === 'highlighter') {
+            lastLine.globalCompositeOperation = 'multiply';
+            setLines((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = lastLine;
+                return updated;
+            });
         }
+           
+        setEditHistory((prev) => {
+
+            let newHistory;
+
+            if (prev.history.length < NUM_MAX_UNDO) {
+                newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lastLine, op: "draw" }];
+            }
+            else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: lastLine, op: "draw" }]; 
+            
+            return {history: newHistory, editIndex: newHistory.length - 1};
+        });
+
+        socketRef.current?.emit('board:draw:line', lastLine);
+                 
     }, []);
 
     const handlePointerEnter = useCallback(() => {
@@ -297,8 +304,7 @@ export default function Board({ shared = false}) {
 
                 if (last_edit.op === 'draw') {
                     setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
-                    socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw' });
-                    // add server side handle
+                    socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw' });
                 } else {
                     setLines((prevLines) => {
                         if (prevLines.some(l => l.id === last_edit.line.id)) {
@@ -306,8 +312,7 @@ export default function Board({ shared = false}) {
                         }
                         return [...prevLines, last_edit.line]
                     });
-                    socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'erase', line: last_edit.line });
-                    // add server side handle
+                    socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'erase', line: last_edit.line });
                 }
                 const updatedHistory = {history: prevHistory.history, editIndex: prevHistory.editIndex - 1};
 
@@ -328,11 +333,11 @@ export default function Board({ shared = false}) {
                         return prevLines;
                     return [...prevLines, last_edit.line]  
                 });  
-                socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw'});
+                socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw', line: last_edit.line});
             }
             else {
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
-                socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'erase'});
+                socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'erase'});
             }
             const updatedHistory = {history: prevHistory.history, editIndex: prevHistory.editIndex + 1};
             return updatedHistory;
