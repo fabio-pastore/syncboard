@@ -1,8 +1,8 @@
-import {useState, useEffect, useRef, useCallBack, useCallback } from "react";
+import {useState, useEffect, useRef, useCallback } from "react";
 import {Stage, Layer, Line } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client"
-import { Pencil, Eraser, Home, Menu, Minus, Share2, Plus, Undo2, Users, ArrowLeft, MessageCircle, Highlighter, Copy, Check, UserPlus, X } from "lucide-react";
+import { Pencil, Eraser, Minus, Share2, Plus, Undo2, Redo2, Users, ArrowLeft, MessageCircle, Highlighter, Copy, Check, UserPlus, X } from "lucide-react";
 import { apiFetch } from "../api";
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL;
@@ -14,12 +14,11 @@ export default function Board({ shared = false}) {
     const {id, token} = useParams();
 
     const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
-    const [isDrawing, setIsDrawing] = useState(false);
-    const [tool, setTool] = useState("pen"); // pen, eraser, select and highlighter - we need to impl select
+    const [tool, setTool] = useState("pen"); // pen, eraser, select and highlighter - we need to implement select
     const [color, setColor] = useState("#000000");
     const [board, setBoard] = useState(null);
     const [lines, setLines] = useState([]);
-    const [lastModifiedLines, setLastModifiedLines] = useState([]);
+    const [editHistory, setEditHistory] = useState({ history: [], editIndex: -1});
     const [strokeWidth, setStrokeWidth] = useState(3);
     const [eraserSize, setEraserSize] = useState(10);
     const [highlighterSize, setHighlighterSize] = useState(30);
@@ -158,18 +157,21 @@ export default function Board({ shared = false}) {
                 if (lineData) {
                     setLines((prev) => prev.filter((l) => l.id !== lineId));
                     
-                    setLastModifiedLines((prev) => {
+                    setEditHistory((prev) => {
 
-                        if (prev.some(item => item.op === 'erase' && item.line.id === lineId)) {
+                        if (prev.history.some(item => item.op === 'erase' && item.line.id === lineId)) {
                             return prev;
                         }
 
-                        if (prev.length < NUM_MAX_UNDO) {
-                            return [...prev, { line: lineData, op: "erase" }];
+                        let newHistory;
+
+                        if (prev.history.length < NUM_MAX_UNDO) {
+                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lineData, op: "erase" }];
                         }
-                        return [...prev.slice(1), { line: lineData, op: "erase" }];
+                        else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: lineData, op: "erase" }];
+
+                        return {history: newHistory, editIndex: newHistory.length - 1};
                     });
-                    // socket to add
                     socketRef.current?.emit('board:draw:erase', lineId);
                 }
             }
@@ -183,7 +185,7 @@ export default function Board({ shared = false}) {
             color,
             strokeWidth: (toolRef.current === 'highlighter') ? highlighterSize : strokeWidth,
             opacity: (toolRef.current === 'highlighter') ? 0.3 : 1,
-            globalCompositeOperation: (toolRef.current === 'highlighter') ? 'multiply' : 'source-over',
+            globalCompositeOperation: 'source-over',
         };
         setLines((prev) => [...prev, newLine]);
     }, [canDraw, color, strokeWidth, highlighterSize]);
@@ -210,18 +212,21 @@ export default function Board({ shared = false}) {
                 if (lineData) {
                     setLines((prev) => prev.filter((l) => l.id !== lineId));
                     
-                    setLastModifiedLines((prev) => {
+                    setEditHistory((prev) => {
 
-                        if (prev.some(item => item.op === 'erase' && item.line.id === lineId)) {
+                        if (prev.history.some(item => item.op === 'erase' && item.line.id === lineId)) {
                             return prev;
                         }
 
-                        if (prev.length < NUM_MAX_UNDO) {
-                            return [...prev, { line: lineData, op: "erase" }];
+                        let newHistory;
+
+                        if (prev.history.length < NUM_MAX_UNDO) {
+                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lineData, op: "erase" }];
                         }
-                        return [...prev.slice(1), { line: lineData, op: "erase" }];
+                        else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: lineData, op: "erase" }];
+
+                        return {history: newHistory, editIndex: newHistory.length - 1};
                     });
-                    // socket to add
                     socketRef.current?.emit('board:draw:erase', lineId);
                 }
             }
@@ -243,13 +248,26 @@ export default function Board({ shared = false}) {
 
         if (toolRef.current !== 'eraser') {
             const lastLine = linesRef.current[linesRef.current.length - 1];
+            if (toolRef.current === 'highlighter') {
+                setLines((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    last.globalCompositeOperation = 'destination-over';
+                    updated[updated.length - 1] = last;
+                    return updated;
+                })
+            }
             if (lastLine) {
-                setLastModifiedLines((prev) => {
+                setEditHistory((prev) => {
 
-                    if (prev.length < NUM_MAX_UNDO) {
-                        return [...prev, { line: lastLine, op: "draw" }];
+                    let newHistory;
+
+                    if (prev.history.length < NUM_MAX_UNDO) {
+                        newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lastLine, op: "draw" }];
                     }
-                    return [...prev.slice(1), { line: lastLine, op: "draw" }];
+                    else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: lastLine, op: "draw" }]; 
+                    
+                    return {history: newHistory, editIndex: newHistory.length - 1};
                 });
                 socketRef.current?.emit('board:draw:line', lastLine);
             }
@@ -267,27 +285,57 @@ export default function Board({ shared = false}) {
         handlePointerUp();
     }, [handlePointerUp]);
 
-    {/* lastModifiedLines contains an array of objects {line, op} where op is either "draw" or "erase" */}
+    {/* editHistory.history contains an array of objects {line, op} where op is either "draw" or "erase" */}
     const handleUndo = useCallback(() => {
-        setLastModifiedLines((prevHistory) => {
-            if (prevHistory.length === 0) return prevHistory;
 
-            const newHistory = [...prevHistory];
-            const last_edit = newHistory.pop(); 
+            setEditHistory((prevHistory) => {
 
+                if (prevHistory.history.length === 0 || prevHistory.editIndex === -1) return prevHistory;
+
+                const curr_edit_indx = prevHistory.editIndex;
+                const last_edit = prevHistory.history.at(curr_edit_indx); 
+
+                if (last_edit.op === 'draw') {
+                    setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
+                    socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw' });
+                    // add server side handle
+                } else {
+                    setLines((prevLines) => {
+                        if (prevLines.some(l => l.id === last_edit.line.id)) {
+                            return prevLines;
+                        }
+                        return [...prevLines, last_edit.line]
+                    });
+                    socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'erase', line: last_edit.line });
+                    // add server side handle
+                }
+                const updatedHistory = {history: prevHistory.history, editIndex: prevHistory.editIndex - 1};
+
+                return updatedHistory;
+            });
+
+        }, []);
+
+    const handleRedo = useCallback(() => {
+
+        setEditHistory((prevHistory) => {
+        
+            if (prevHistory.history.length === 0 || prevHistory.editIndex === prevHistory.history.length - 1) return prevHistory;
+            const last_edit = prevHistory.history.at(prevHistory.editIndex + 1);
             if (last_edit.op === 'draw') {
-                setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
-                socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw' });
-            } else {
                 setLines((prevLines) => {
-                    if (prevLines.some(l => l.id === last_edit.line.id)) {
+                    if (prevLines.some(l => l.id === last_edit.line.id))
                         return prevLines;
-                    }
-                    return [...prevLines, last_edit.line]
-                });
-                socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'erase', line: last_edit.line });
+                    return [...prevLines, last_edit.line]  
+                });  
+                socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw'});
             }
-            return newHistory;
+            else {
+                setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
+                socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'erase'});
+            }
+            const updatedHistory = {history: prevHistory.history, editIndex: prevHistory.editIndex + 1};
+            return updatedHistory;
         });
     }, []);
 
@@ -364,7 +412,7 @@ export default function Board({ shared = false}) {
     return (
         <div className="h-screen overflow-hidden relative bg-white">
             
-            <div className="top-2 text-xl font-semibold absolute top-1 right-[50vw] translate-x-1/2">
+            <div className="top-2 text-xl font-semibold absolute top-1 right-[50vw] translate-x-1/2 z-[1] pointer-events-none">
                 <span className="text-violet-700/30">Sync</span>
                 <span className="text-black/30">Board</span>
             </div>
@@ -536,8 +584,12 @@ export default function Board({ shared = false}) {
 
                         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-                        <ToolButton title="Undo" disabled = {lastModifiedLines.length === 0} onClick={handleUndo}>
+                        <ToolButton title="Undo" disabled = {editHistory.history.length === 0 || editHistory.editIndex === -1} onClick={handleUndo}>
                             <Undo2 size={18} />
+                        </ToolButton>
+
+                        <ToolButton title="Redo" disabled = {editHistory.history.length === 0 || editHistory.editIndex === editHistory.history.length - 1} onClick={handleRedo}>
+                            <Redo2 size={18} />
                         </ToolButton>
                     </div>
                 )}
