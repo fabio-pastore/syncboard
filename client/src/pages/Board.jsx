@@ -7,15 +7,17 @@ import { apiFetch } from "../api";
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL;
 
+const UPDATE_INTERVAL = 16 // in ms (~60fps)
 const NUM_MAX_UNDO = 32;
 const PRESET_COLORS = ['#000000', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ffffff'];
 
-export default function Board({ shared = false}) {
+export default function Board({ shared = false }) {
     const {id, token} = useParams();
 
     const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
     const [tool, setTool] = useState("pen"); // pen, eraser, select and highlighter - we need to implement select
-    const [color, setColor] = useState("#000000");
+    const [brushColor, setBrushColor] = useState("#000000");
+    const [highlighterColor, setHighlighterColor] = useState("#FBF719")
     const [board, setBoard] = useState(null);
     const [lines, setLines] = useState([]);
     const [editHistory, setEditHistory] = useState({ history: [], editIndex: -1});
@@ -29,6 +31,7 @@ export default function Board({ shared = false}) {
     const [shareUsername, setShareUsername] = useState('');
     const [shareUserRole, setShareUserRole] = useState('viewer');
     const [shareUserMsg, setShareUserMsg] = useState('');
+    const [lastUpdate, setLastUpdate] = useState(0);
     const [error, setError] = useState("");
 
     const navigate = useNavigate();
@@ -40,6 +43,8 @@ export default function Board({ shared = false}) {
     const eraserCursorRef = useRef(null);
     const linesRef = useRef(lines);
     const isDrawingRef = useRef(false);
+    const activeLineRef = useRef(null);
+    const activeLineDataRef = useRef(null);
 
     useEffect(() => {linesRef.current = lines}, [lines]);
     useEffect(() => {toolRef.current = tool}, [tool]);
@@ -109,21 +114,33 @@ export default function Board({ shared = false}) {
             sock.on('board:peers', (count) => setPeers(count));
 
             sock.on('board:draw:line', (line) => {
-                // setLines((prev) => [...prev, line]);
-                setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
-            });
+                setLines((prev) => {
+                    const oldLine = prev.find(l => l.id === line.id);
+                    if (oldLine) {
+                        const updated = [...prev];
+                        const index = updated.indexOf(oldLine);
+                        updated[index] = line;
+                        return updated;
+                    }
+                    else return [...prev, line];
+                });
+            })
 
             sock.on('board:draw:erase', (lineId) => {
                 setLines((prev) => prev.filter((l) => l.id !== lineId));
                 
             });
 
-            sock.on('board:draw:undo', ({lineId, op, line}) => {
+            sock.on('board:draw:undo', (data_payload) => {
+                if (!data_payload) return;
+                const {lineId, op, line} = data_payload;
                 if (op === 'draw') setLines((prev) => prev.filter((l) => l.id !== lineId));
                 else setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
             });
 
-            sock.on('board:draw:redo', ({lineId, op, line}) => {
+            sock.on('board:draw:redo', (data_payload) => {
+                if (!data_payload) return;
+                const {lineId, op, line} = data_payload;
                 if (op === 'draw') setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));
             });
@@ -155,7 +172,7 @@ export default function Board({ shared = false}) {
         const pos = stageRef.current.getPointerPosition();
         if (toolRef.current === 'eraser') {
             const shape = stageRef.current.getIntersection(pos);
-            if (shape && shape.getClassName() === 'Line'){
+            if (shape && shape.getClassName() === 'Line') {
                 const lineId = shape.id();
                 const lineData = linesRef.current?.find(l => l.id === lineId);
                 
@@ -187,13 +204,25 @@ export default function Board({ shared = false}) {
         const newLine = {
             id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, 
             points: [pos.x, pos.y, pos.x, pos.y],
-            color,
+            color: (toolRef.current == 'highlighter') ? highlighterColor : brushColor,
             strokeWidth: (toolRef.current === 'highlighter') ? highlighterSize : strokeWidth,
             opacity: (toolRef.current === 'highlighter') ? 0.3 : 1,
             globalCompositeOperation: 'source-over',
         };
-        setLines((prev) => [...prev, newLine]);
-    }, [canDraw, color, strokeWidth, highlighterSize]);
+        
+        activeLineDataRef.current = newLine;
+
+        if (activeLineRef.current) {
+            activeLineRef.current.points(newLine.points);
+            activeLineRef.current.stroke(newLine.color);
+            activeLineRef.current.strokeWidth(newLine.strokeWidth);
+            activeLineRef.current.opacity(newLine.opacity)
+            activeLineRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
+            activeLineRef.current.show();
+            activeLineRef.current.getLayer().batchDraw();
+        }
+
+    }, [canDraw, brushColor, highlighterColor, strokeWidth, highlighterSize]);
 
 
     const handlePointerMove = useCallback((e) => {
@@ -210,7 +239,7 @@ export default function Board({ shared = false}) {
 
         if (toolRef.current === 'eraser') {
             const shape = stageRef.current.getIntersection(pos);
-            if (shape && shape.getClassName() === 'Line'){
+            if (shape && shape.getClassName() === 'Line') {
                 const lineId = shape.id();
                 const lineData = linesRef.current?.find(l => l.id === lineId);
                 
@@ -238,13 +267,21 @@ export default function Board({ shared = false}) {
             return;
         }
 
-        setLines((prev) => {
-            const updated = [...prev];
-            const last = { ...updated[updated.length - 1]};
-            last.points = [ ...last.points, pos.x, pos.y ];
-            updated[updated.length - 1] = last;
-            return updated;
-            });
+        if (!activeLineDataRef.current) return;
+
+        activeLineDataRef.current.points.push(pos.x, pos.y);
+
+        if (activeLineRef.current) {
+            activeLineRef.current.points(activeLineDataRef.current.points);
+            activeLineRef.current.getLayer().batchDraw();
+        }
+
+        const now = Date.now();
+        if (now - lastUpdate > UPDATE_INTERVAL) {
+            socketRef.current?.emit('board:draw:tmpline', activeLineDataRef.current); // update line in real time!
+            setLastUpdate(now);
+        }
+
     }, [canDraw]);
 
     const handlePointerUp = useCallback(() => {
@@ -253,31 +290,34 @@ export default function Board({ shared = false}) {
 
         if (toolRef.current === 'eraser') return;
 
-        const lastLine = linesRef.current[linesRef.current.length - 1];
-        if (!lastLine) return;
+        const finishedLine = activeLineDataRef.current;
+        if (!finishedLine) return;
 
-        if (toolRef.current === 'highlighter') {
-            lastLine.globalCompositeOperation = 'multiply';
-            setLines((prev) => {
-                const updated = [...prev];
-                updated[updated.length - 1] = lastLine;
-                return updated;
-            });
+        if (toolRef.current === 'highlighter') finishedLine.globalCompositeOperation = 'multiply';
+
+        setLines((prev) => [...prev, finishedLine]);
+        linesRef.current = [...(linesRef.current || []), finishedLine];
+
+        if (activeLineRef.current) {
+            activeLineRef.current.hide();
+            activeLineRef.current.getLayer().batchDraw();
         }
+
+        activeLineDataRef.current = null;
            
         setEditHistory((prev) => {
 
             let newHistory;
 
             if (prev.history.length < NUM_MAX_UNDO) {
-                newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lastLine, op: "draw" }];
+                newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
             }
-            else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: lastLine, op: "draw" }]; 
+            else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: finishedLine, op: "draw" }]; 
             
             return {history: newHistory, editIndex: newHistory.length - 1};
         });
 
-        socketRef.current?.emit('board:draw:line', lastLine);
+        socketRef.current?.emit('board:draw:line', finishedLine);
                  
     }, []);
 
@@ -412,7 +452,8 @@ export default function Board({ shared = false}) {
             default:
                 console.error("[SyncBoard] Unknown tool selected!");
         }
-    }                          
+    }
+    const setColor = (fn) => (tool === 'highlighter') ? setHighlighterColor(fn) : setBrushColor(fn);               
 
     return (
         <div className="h-screen overflow-hidden relative bg-white">
@@ -454,6 +495,14 @@ export default function Board({ shared = false}) {
                             listening={true}
                         />
                     ))}
+                        <Line
+                            ref={activeLineRef}
+                            tension={0.3}
+                            lineCap="round"
+                            lineJoin="round"
+                            listening={false}
+                            visible={false}
+                        />
                 </Layer>
             </Stage>
             
@@ -554,12 +603,12 @@ export default function Board({ shared = false}) {
                         <label className="relative w-7 h-7 cursor-pointer" title="Color">
                             <div className="w-7 h-7 rounded-full border-2 transition hover:scale-110"
                                 style={{
-                                    background: color,
-                                    borderColor: `color-mix(in srgb, ${color}, black 30%)`
+                                    background: tool === 'highlighter' ? highlighterColor : brushColor,
+                                    borderColor: `color-mix(in srgb, ${tool === 'highlighter' ? highlighterColor : brushColor}, black 30%)`
                                 }}
                             >
                             </div>
-                            <input type="color" value={color} onChange={(e) => { setColor(e.target.value); }} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+                            <input type="color" value={tool === 'highlighter' ? highlighterColor : brushColor} onChange={(e) => { setColor(e.target.value); }} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
                         </label>
 
                         <div className="w-px h-6 bg-gray-300 mx-1"></div>

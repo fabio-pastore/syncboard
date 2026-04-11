@@ -35,13 +35,14 @@ export default function Dashboard() {
             } else {
                 const mine = allBoards.filter(b => {
                     const ownerId = b.owner?._id || b.owner;
-                    return ownerId === user._id;
+                    return ownerId === user.id;
                 });
                 const shared = allBoards.filter(b => {
                     const ownerId = b.owner?._id || b.owner;
-                    return ownerId !== user._id;
+                    return ownerId !== user.id;
                 });
                 setBoards(mine.filter(b => !b.folder));
+
                 setSharedBoards(shared);
             }
         } catch (error) {
@@ -313,6 +314,7 @@ export default function Dashboard() {
                                 <div
                                     key={board._id}
                                     className="group relative bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-violet-600 transition cursor-pointer"
+                                    onClick={() => navigate(`/board/${board._id}`)}
                                 >
                                     {editingBoard === board._id ? (
                                         <form
