@@ -46,6 +46,10 @@ export default function Board({ shared = false }) {
     const activeLineRef = useRef(null);
     const activeLineDataRef = useRef(null);
 
+    const isPanningRef = useRef(false);
+    const panStartRef = useRef({ x: 0, y: 0 });
+    const stagePositionRef = useRef({ x: 0, y: 0 });
+
     useEffect(() => {linesRef.current = lines}, [lines]);
     useEffect(() => {toolRef.current = tool}, [tool]);
 
@@ -166,12 +170,28 @@ export default function Board({ shared = false }) {
     const canDraw = (role === 'editor');
 
     const handlePointerDown = useCallback((e) => {
+        if (e.evt.button === 1) {
+            e.evt.preventDefault();
+            isPanningRef.current = true;
+            const stage = stageRef.current;
+            panStartRef.current = {
+                x: e.evt.clientX - stage.x(),
+                y: e.evt.clientY - stage.y(),
+            };
+            stage.container().style.cursor = 'grabbing';
+            return;
+        }
+
         if (!canDraw || e.evt.button !== 0) return;
         isDrawingRef.current = true;
 
-        const pos = stageRef.current.getPointerPosition();
+        // const pos = stageRef.current.getPointerPosition();
+        const stage = stageRef.current;
+        const pointerPos = stage.getPointerPosition();
+
         if (toolRef.current === 'eraser') {
-            const shape = stageRef.current.getIntersection(pos);
+            // const shape = stageRef.current.getIntersection(pos);
+            const shape = stageRef.current.getIntersection(pointerPos);
             if (shape && shape.getClassName() === 'Line') {
                 const lineId = shape.id();
                 const lineData = linesRef.current?.find(l => l.id === lineId);
@@ -200,6 +220,11 @@ export default function Board({ shared = false }) {
             return;
         }
 
+        const pos = {
+            x: pointerPos.x - stage.x(),
+            y: pointerPos.y - stage.y(),
+        };
+
         {/* wtf is this id? HAHAHAHHAHAHA */}
         const newLine = {
             id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, 
@@ -226,6 +251,17 @@ export default function Board({ shared = false }) {
 
 
     const handlePointerMove = useCallback((e) => {
+
+        if (isPanningRef.current) {
+            const newPos = {
+                x: e.evt.clientX - panStartRef.current.x,
+                y: e.evt.clientY - panStartRef.current.y,
+            };
+            stageRef.current.position(newPos);
+            stagePositionRef.current = newPos;
+            return;     // otherwise it starts drawing
+        }
+
         if (!canDraw) return;
 
         if (eraserCursorRef.current) {
@@ -235,10 +271,13 @@ export default function Board({ shared = false }) {
 
         if (!isDrawingRef.current) return;
 
-        const pos = stageRef.current.getPointerPosition();
+        //const pos = stageRef.current.getPointerPosition();
+        const stage = stageRef.current;
+        const pointerPos = stage.getPointerPosition();
 
         if (toolRef.current === 'eraser') {
-            const shape = stageRef.current.getIntersection(pos);
+            // const shape = stageRef.current.getIntersection(pos);
+            const shape = stageRef.current.getIntersection(pointerPos);
             if (shape && shape.getClassName() === 'Line') {
                 const lineId = shape.id();
                 const lineData = linesRef.current?.find(l => l.id === lineId);
@@ -269,6 +308,11 @@ export default function Board({ shared = false }) {
 
         if (!activeLineDataRef.current) return;
 
+        const pos = {
+            x: pointerPos.x - stage.x(),
+            y: pointerPos.y - stage.y(),
+        };
+
         activeLineDataRef.current.points.push(pos.x, pos.y);
 
         if (activeLineRef.current) {
@@ -285,6 +329,12 @@ export default function Board({ shared = false }) {
     }, [canDraw]);
 
     const handlePointerUp = useCallback(() => {
+        if (isPanningRef.current) {
+            isPanningRef.current = false;
+            const stage = stageRef.current;
+            stage.container().style.cursor = toolRef.current === 'eraser' ? 'none' : (canDraw ? 'crosshair' : 'default');
+            return; // of course it has to create a mess without the return 
+        }
         if (!isDrawingRef.current) return;
         isDrawingRef.current = false;
 
@@ -331,6 +381,20 @@ export default function Board({ shared = false }) {
         if (eraserCursorRef.current) eraserCursorRef.current.style.display = 'none';
         handlePointerUp();
     }, [handlePointerUp]);
+
+    const handleWheel = useCallback((e) => {
+        e.evt.preventDefault();
+        const stage = stageRef.current;
+        const dx = e.evt.deltaX;
+        const dy = e.evt.deltaY;
+        const newPos = {
+            x: stage.x() - dx,
+            y: stage.y() - dy,
+        };
+
+        stage.position(newPos);
+        stagePositionRef.current = newPos;
+    })
 
     {/* editHistory.history contains an array of objects {line, op} where op is either "draw" or "erase" */}
     const handleUndo = useCallback(() => {
@@ -456,7 +520,7 @@ export default function Board({ shared = false }) {
     const setColor = (fn) => (tool === 'highlighter') ? setHighlighterColor(fn) : setBrushColor(fn);               
 
     return (
-        <div className="h-screen overflow-hidden relative bg-white">
+        <div className="h-screen overflow-hidden relative bg-white" onMouseDown={(e) => {if (e.button === 1) e.preventDefault();}}>
             
             <div className="top-2 text-xl font-semibold absolute top-1 right-[50vw] translate-x-1/2 z-[1] pointer-events-none">
                 <span className="text-violet-700/30">Sync</span>
@@ -473,6 +537,7 @@ export default function Board({ shared = false }) {
                     onPointerUp={handlePointerUp}
                     onMouseEnter={handlePointerEnter} 
                     onMouseLeave={handlePointerLeave}
+                    onWheel={handleWheel}
                     style={{
                         cursor: tool === 'eraser' ? 'none' : (canDraw ? 'crosshair' : 'default'),
                         display:'block'
