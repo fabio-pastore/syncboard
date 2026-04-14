@@ -2,7 +2,7 @@ import {useState, useEffect, useRef, useCallback } from "react";
 import {Stage, Layer, Line, Circle } from "react-konva";
 import { useParams, useNavigate, data } from "react-router-dom";
 import { io } from "socket.io-client"
-import { Pencil, Eraser, Minus, Share2, Plus, Undo2, Redo2, Users, ArrowLeft, MessageCircle, Highlighter, Copy, Check, UserPlus, X, Shapes, Triangle, Square, Circle as CircleIcon } from "lucide-react";
+import { Pencil, Eraser, Minus, Share2, Plus, Undo2, Redo2, Users, ArrowLeft, MessageCircle, Highlighter, Copy, Check, UserPlus, X, Shapes, Triangle, Square, Circle as CircleIcon, PaintBucket } from "lucide-react";
 import { apiFetch } from "../api";
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL;
@@ -17,12 +17,17 @@ export default function Board({ shared = false }) {
     const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
     const [tool, setTool] = useState("pen"); // pen, eraser, select and highlighter - we need to implement select
     const [brushColor, setBrushColor] = useState("#000000");
-    const [highlighterColor, setHighlighterColor] = useState("#FBF719")
+    const [highlighterColor, setHighlighterColor] = useState("#eab308")
+    const [shapeColor, setShapeColor] = useState("#3b82f6");
+    const [shapeBorderColor, setShapeBorderColor] = useState("#000000");
+    const [fillShape, setFillShape] = useState(false);
+    const [selectedShapeMenu, setSelectedShapeMenu] = useState(false);
     const [board, setBoard] = useState(null);
     const [lines, setLines] = useState([]);
     const [shape, setShape] = useState('');
     const [editHistory, setEditHistory] = useState({ history: [], editIndex: -1});
     const [strokeWidth, setStrokeWidth] = useState(3);
+    const [shapeWidth, setShapeWidth] = useState(5);
     const [eraserSize, setEraserSize] = useState(10);
     const [highlighterSize, setHighlighterSize] = useState(30);
     const [peers, setPeers] = useState(0);
@@ -201,14 +206,13 @@ export default function Board({ shared = false }) {
             y: pointerPos.y - stage.y(),
             };
 
-
-
             newLine = {
                 id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, 
                 type: (shapeRef.current === 'circle') ? 'circle' : 'line',
                 points: [pos.x, pos.y, pos.x, pos.y],
-                color: brushColor,
-                strokeWidth: strokeWidth,
+                color: shapeBorderColor,
+                fill: (fillShape && shapeRef.current !== 'line') ? shapeColor : '',
+                strokeWidth: shapeWidth,
                 globalCompositeOperation: 'source-over',
                 closed: shapeRef.current !== 'line',
                 tension: 0,
@@ -219,7 +223,7 @@ export default function Board({ shared = false }) {
         }
 
         if (toolRef.current === 'eraser') {
-            // const shape = stageRef.current.getIntersection(pos);
+
             const shape = stageRef.current.getIntersection(pointerPos);
             if (shape && (shape.getClassName() === 'Line' || shape.getClassName() === 'Circle')) {
                 const lineId = shape.id();
@@ -266,6 +270,7 @@ export default function Board({ shared = false }) {
                 globalCompositeOperation: 'source-over',
                 closed: false,
                 tension: 0.3,
+                fill: '',
                 lineCap: 'round',
                 lineJoin: 'round'
             };
@@ -285,6 +290,7 @@ export default function Board({ shared = false }) {
                 activeCircleRef.current.radius(0); 
                 
                 activeCircleRef.current.stroke(newLine.color);
+                activeCircleRef.current.fill(newLine.fill);
                 activeCircleRef.current.strokeWidth(newLine.strokeWidth);
                 activeCircleRef.current.opacity(newLine.opacity);
                 activeCircleRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
@@ -302,6 +308,7 @@ export default function Board({ shared = false }) {
                 activeLineRef.current.points(newLine.points);
                 
                 activeLineRef.current.stroke(newLine.color);
+                activeLineRef.current.fill(newLine.fill);
                 activeLineRef.current.strokeWidth(newLine.strokeWidth);
                 activeLineRef.current.opacity(newLine.opacity);
                 activeLineRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
@@ -317,7 +324,7 @@ export default function Board({ shared = false }) {
             }
         }
 
-    }, [canDraw, brushColor, highlighterColor, strokeWidth, highlighterSize]);
+    }, [canDraw, brushColor, highlighterColor, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape]);
 
     const computeTrianglePoints = (xPeak, yPeak, xBase, yBase) => {
                     const dx = xBase - xPeak;
@@ -649,7 +656,7 @@ export default function Board({ shared = false }) {
         setTimeout(() => setCopied(false), 2000);
     }
 
-    const activeSize = tool === 'eraser' ? eraserSize : tool === 'highlighter' ? highlighterSize : strokeWidth;
+    const activeSize = (tool === 'eraser') ? eraserSize : (tool === 'highlighter') ? highlighterSize : (tool === 'shape') ? shapeWidth : strokeWidth;
     const setActiveSize = (fn) => {
         switch (toolRef.current) {
             case 'pen':
@@ -661,6 +668,9 @@ export default function Board({ shared = false }) {
             case 'eraser':
                 setEraserSize(fn);
                 break;
+            case 'shape':
+                setShapeWidth(fn);
+                break;
             default:
                 console.error("[SyncBoard] Unknown tool selected!");
         }
@@ -668,12 +678,27 @@ export default function Board({ shared = false }) {
 
     const setColor = (fn) => (tool === 'highlighter') ? setHighlighterColor(fn) : setBrushColor(fn);
 
+    const getContrastColor = (hexColor) => {
+        if (!hexColor) return 'white';
+        
+        const hex = hexColor.replace('#', '');
+        
+        const r = parseInt(hex.substring(0, 2), 16);
+        const g = parseInt(hex.substring(2, 4), 16);
+        const b = parseInt(hex.substring(4, 6), 16);
+        
+        const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+        
+        return brightness > 128 ? 'black' : 'white';
+
+    };
+
     return (
         <div className="h-screen overflow-hidden relative bg-white" onMouseDown={(e) => {if (e.button === 1) e.preventDefault();}}>
             
             <div className="top-2 text-xl font-semibold absolute top-1 right-[50vw] translate-x-1/2 z-[1] pointer-events-none">
-                <span className="text-violet-700/30">Sync</span>
-                <span className="text-black/30">Board</span>
+                <span className="text-violet-700/45">Sync</span>
+                <span className="text-black/45">Board</span>
             </div>
 
                 {/* onMouseEnter has to be a mouse event because react decided so (why do PointerDown, Move, Up and Leave work though but not pointer enter, is my question?) */}
@@ -697,7 +722,18 @@ export default function Board({ shared = false }) {
 
                         if (line.type === 'circle') {
                             const {x_center, y_center, radius} = computeCircleData(line.points);
-                            return <Circle key={line.id} id={line.id} x={x_center} y={y_center} radius={radius} stroke={line.color} strokeWidth={line.strokeWidth} />; 
+                            return (
+                                <Circle 
+                                    key={line.id} 
+                                    id={line.id} 
+                                    x={x_center} 
+                                    y={y_center} 
+                                    radius={radius} 
+                                    stroke={line.color} 
+                                    fill={line.fill}
+                                    strokeWidth={line.strokeWidth} 
+                                /> 
+                            );
                         }
 
                         else return (
@@ -706,6 +742,7 @@ export default function Board({ shared = false }) {
                                 id={line.id}
                                 points={line.points}
                                 stroke={line.color}
+                                fill={line.fill}
                                 strokeWidth={line.strokeWidth}
                                 opacity={line.opacity}
                                 hitStrokeWidth={line.hitStrokeWidth}
@@ -817,7 +854,10 @@ export default function Board({ shared = false }) {
 
                         <ToolButton
                             active={tool === "shape"}
-                            onClick={() => setTool('shape')}
+                            onClick={() => {
+                                setTool('shape');
+                                setSelectedShapeMenu(prev => !prev);
+                            }}
                             title="Shape"
                         >
                             <Shapes size={18} />
@@ -826,7 +866,7 @@ export default function Board({ shared = false }) {
                         <div 
                             id='shape_selector' 
                             className="absolute bottom-14 left-16 bg-white flex items-center gap-1 px-2 py-2 border border-gray-200 rounded-2xl"
-                            style = {{display: (tool === 'shape') ? 'inline' : 'none'}}
+                            style = {{display: (tool === 'shape' && selectedShapeMenu) ? 'flex' : 'none'}}
                         >
                             
                             <ToolButton
@@ -861,10 +901,59 @@ export default function Board({ shared = false }) {
                                 <CircleIcon size={18} />
                             </ToolButton>
 
+                            <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-                        </div>
+                            <label className="relative w-6 h-6 cursor-pointer" title="Shape border color">
+                                <div className="w-6 h-6 rounded-full border-2 transition hover:scale-110"
+                                    style={{
+                                        background: shapeBorderColor,
+                                        borderColor: `color-mix(in srgb, ${shapeBorderColor}, black 30%)`
+                                    }}
+                                >
+                                </div>
+                                <input type="color" value={shapeBorderColor} onChange={(e) => { setShapeBorderColor(e.target.value); }} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+                            </label>
 
-                        <div className="w-px h-6 bg-gray-300 mx-1"></div>
+                            <label className="relative w-6 h-6 cursor-pointer" title="Shape color">
+                                <div className="w-6 h-6 rounded-full border-2 transition hover:scale-110"
+                                    style={{
+                                        background: shapeColor,
+                                        borderColor: `color-mix(in srgb, ${shapeColor}, black 30%)`
+                                    }}
+                                >
+                                </div>
+                                <input type="color" value={shapeColor} onChange={(e) => { setShapeColor(e.target.value); }} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+                            </label>
+
+                            <div className="w-px h-6 bg-gray-300 mx-1"></div>
+
+                            <PaintBucket size={18} />
+                            {/* all this just to have a checkbox with no internal border */}
+                            <div className="relative mx-2 w-5 h-5">
+                            
+                                <div 
+                                    className={`absolute inset-0 border-2 border-gray-600 transition-colors duration-200 
+                                        ${fillShape ? 'bg-current' : 'bg-white'}`}
+                                    style={{ 
+                                        borderRadius: '25%', 
+                                        color: fillShape ? shapeColor : 'transparent' 
+                                    }}
+                                >
+                                    {fillShape && (
+                                        <svg className="w-full h-full text-white p-0" fill="none" viewBox="0 0 24 24" stroke={getContrastColor(shapeColor)} strokeWidth="4">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    )}
+                                </div>
+                                <input 
+                                    type='checkbox' 
+                                    checked={fillShape}
+                                    onChange={(e) => setFillShape(e.target.checked)}
+                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                />
+                                </div>
+
+                            </div>    
 
                         {
                             PRESET_COLORS.map((c) => (
@@ -904,10 +993,9 @@ export default function Board({ shared = false }) {
 
                         <div className="flex items-center justify-center w-7">
                             <div className="rounded-full bg-gray-800" style={{
-                                    width: Math.min(activeSize * ((tool === 'eraser' || tool === 'highlighter') ? 0.7 : 2.5), 22),
-                                    height: Math.min(activeSize * ((tool === 'eraser' || tool === 'highlighter') ? 0.7 : 2.5), 22),
+                                    width: Math.min(activeSize * ((tool === 'eraser' || tool === 'highlighter') ? 0.7 : (tool === 'shape') ? 1.25 :  2.5), 22),
+                                    height: Math.min(activeSize * ((tool === 'eraser' || tool === 'highlighter') ? 0.7 : (tool === 'shape') ? 1.25 : 2.5), 22),
                                 }}>
-                                
                             </div>
                         </div>
 
