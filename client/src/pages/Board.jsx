@@ -7,13 +7,32 @@ import { apiFetch } from "../api";
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL;
 
-const UPDATE_INTERVAL = 16 // in ms (~60fps)
+const UPDATE_INTERVAL = 16
 const NUM_MAX_UNDO = 32;
+const MIN_POINT_DISTANCE = 3;
 const PRESET_COLORS = ['#000000', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ffffff'];
+
+function smoothPoints(pts, iterations = 2) {
+    if (pts.length < 6) return pts;
+    let smoothed = [...pts];
+    for (let iter = 0; iter < iterations; iter++) {
+        const next = [smoothed[0], smoothed[1]];
+        for (let i = 2; i < smoothed.length - 2; i += 2) {
+            next.push(
+                0.25 * smoothed[i - 2] + 0.5 * smoothed[i] + 0.25 * smoothed[i + 2],
+                0.25 * smoothed[i - 1] + 0.5 * smoothed[i + 1] + 0.25 * smoothed[i + 3]
+            );
+        }
+        next.push(smoothed[smoothed.length - 2], smoothed[smoothed.length - 1]);
+        smoothed = next;
+    }
+    return smoothed;
+}
 
 export default function Board({ shared = false }) {
     const {id, token} = useParams();
 
+    const [scale, setScale] = useState(1);
     const [stageSize, setStageSize] = useState({ width: window.innerWidth, height: window.innerHeight });
     const [tool, setTool] = useState("pen"); // pen, eraser, select and highlighter - we need to implement select
     const [brushColor, setBrushColor] = useState("#000000");
@@ -198,12 +217,13 @@ export default function Board({ shared = false }) {
         const stage = stageRef.current;
         const pointerPos = stage.getPointerPosition();
         let newLine = null;
+        const pointerScale = stage.scaleX() || 1;
 
         if (toolRef.current === 'shape') {
             
             const pos = {
-            x: pointerPos.x - stage.x(),
-            y: pointerPos.y - stage.y(),
+            x: (pointerPos.x - stage.x()) / pointerScale,
+            y: (pointerPos.y - stage.y()) / pointerScale,
             };
 
             newLine = {
@@ -254,8 +274,8 @@ export default function Board({ shared = false }) {
         }
 
         const pos = {
-            x: pointerPos.x - stage.x(),
-            y: pointerPos.y - stage.y(),
+            x: (pointerPos.x - stage.x()) / pointerScale,
+            y: (pointerPos.y - stage.y()) / pointerScale,
         };
 
         {/* wtf is this id? HAHAHAHHAHAHA */}
@@ -399,6 +419,7 @@ export default function Board({ shared = false }) {
         //const pos = stageRef.current.getPointerPosition();
         const stage = stageRef.current;
         const pointerPos = stage.getPointerPosition();
+        const pointerScale = stage.scaleX() || 1;
 
         if (toolRef.current === 'eraser') {
             // const shape = stageRef.current.getIntersection(pos);
@@ -434,8 +455,9 @@ export default function Board({ shared = false }) {
         if (!activeLineDataRef.current) return;
 
         const pos = {
-            x: pointerPos.x - stage.x(),
-            y: pointerPos.y - stage.y(),
+            // pointer scale has to be taka into account otherwise it explodes
+            x: (pointerPos.x - stage.x()) / pointerScale,
+            y: (pointerPos.y - stage.y()) / pointerScale,
         };
 
         if (toolRef.current === 'shape') {
@@ -451,7 +473,33 @@ export default function Board({ shared = false }) {
             
         }
 
-        else activeLineDataRef.current.points.push(pos.x, pos.y); // free-draw line
+        else {
+            const coalescedEvents = e.evt.getCoalescedEvents ? e.evt.getCoalescedEvents() : [];
+            const pts = activeLineDataRef.current.points;
+            if (coalescedEvents.length > 1) {
+                const rect = stage.container().getBoundingClientRect();
+                for (const ce of coalescedEvents) {
+                    const pos_x = (ce.clientX - rect.left - stage.x()) / pointerScale;
+                    const pos_y = (ce.clientY - rect.top - stage.y()) / pointerScale;
+                    
+                    const lastX = pts[pts.length - 2];
+                    const lastY = pts[pts.length - 1];
+                    const dx = pos_x - lastX;
+                    const dy = pos_y - lastY;
+                    if (dx * dx + dy * dy >= MIN_POINT_DISTANCE * MIN_POINT_DISTANCE) {
+                        pts.push(pos_x, pos_y);
+                    }
+                }
+            } else {
+                const lastX = pts[pts.length - 2];
+                const lastY = pts[pts.length - 1];
+                const dx = pos.x - lastX;
+                const dy = pos.y - lastY;
+                if (dx * dx + dy * dy >= MIN_POINT_DISTANCE * MIN_POINT_DISTANCE) {
+                    pts.push(pos.x, pos.y);
+                }
+            }
+        }
 
         const isCircle = toolRef.current === 'shape' && shapeRef.current === 'circle';
 
@@ -491,6 +539,10 @@ export default function Board({ shared = false }) {
 
         const finishedLine = activeLineDataRef.current;
         if (!finishedLine) return;
+
+        if (finishedLine.type === 'line' && !finishedLine.closed && finishedLine.points.length > 4) {
+            finishedLine.points = smoothPoints(finishedLine.points);
+        }
 
         if (toolRef.current === 'highlighter') finishedLine.globalCompositeOperation = 'multiply';
 
@@ -540,16 +592,43 @@ export default function Board({ shared = false }) {
     const handleWheel = useCallback((e) => {
         e.evt.preventDefault();
         const stage = stageRef.current;
-        const dx = e.evt.deltaX;
-        const dy = e.evt.deltaY;
-        const newPos = {
-            x: stage.x() - dx,
-            y: stage.y() - dy,
-        };
+        
+        if (e.evt.ctrlKey || e.evt.metaKey) {
+            const scaleBy = 1.05;
+            const oldScale = stage.scaleX();
+            const pointer = stage.getPointerPosition();
 
-        stage.position(newPos);
-        stagePositionRef.current = newPos;
-    })
+            const mousePointTo = {
+                x: (pointer.x - stage.x()) / oldScale,
+                y: (pointer.y - stage.y()) / oldScale,
+            };
+
+            const direction = e.evt.deltaY > 0 ? -1 : 1;
+            const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+            
+            const clampedScale = Math.max(0.1, Math.min(newScale, 10));
+
+            stage.scale({ x: clampedScale, y: clampedScale });
+            setScale(clampedScale);
+
+            const newPos = {
+                x: pointer.x - mousePointTo.x * clampedScale,
+                y: pointer.y - mousePointTo.y * clampedScale,
+            };
+            stage.position(newPos);
+            stagePositionRef.current = newPos;
+        } else {
+            const dx = e.evt.deltaX;
+            const dy = e.evt.deltaY;
+            const newPos = {
+                x: stage.x() - dx,
+                y: stage.y() - dy,
+            };
+
+            stage.position(newPos);
+            stagePositionRef.current = newPos;
+        }
+    }, [])
 
     {/* editHistory.history contains an array of objects {line, op} where op is either "draw" or "erase" */}
     const handleUndo = useCallback(() => {
@@ -780,8 +859,8 @@ export default function Board({ shared = false }) {
                 ref={eraserCursorRef}
                 className="fixed pointer-events-none rounded-full border-2 border-gray-400 bg-white"
                 style={{
-                    width: eraserSize,
-                    height: eraserSize,
+                    width: eraserSize * scale,
+                    height: eraserSize * scale,
                     display: tool === 'eraser' ? 'block' : 'none',
                     transform: 'translate(-50%, -50%)',
                 }}
