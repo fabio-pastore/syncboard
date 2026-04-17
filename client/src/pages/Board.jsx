@@ -1,4 +1,4 @@
-import {useState, useEffect, useRef, useCallback } from "react";
+import {useState, useEffect, useRef, useCallback, Fragment } from "react";
 import {Stage, Layer, Line, Circle } from "react-konva";
 import { useParams, useNavigate, data } from "react-router-dom";
 import { io } from "socket.io-client"
@@ -11,6 +11,13 @@ const UPDATE_INTERVAL = 16
 const NUM_MAX_UNDO = 32;
 const MIN_POINT_DISTANCE = 3;
 const PRESET_COLORS = ['#000000', '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#ffffff'];
+
+const hexToRgba = (hex, opacity) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+};
 
 function smoothPoints(pts, iterations = 2) {
     if (pts.length < 6) return pts;
@@ -39,6 +46,8 @@ export default function Board({ shared = false }) {
     const [highlighterColor, setHighlighterColor] = useState("#eab308")
     const [shapeColor, setShapeColor] = useState("#3b82f6");
     const [shapeBorderColor, setShapeBorderColor] = useState("#000000");
+    const [shapeFillOpacity, setShapeFillOpacity] = useState(1);
+    const [shapeBorderOpacity, setShapeBorderOpacity] = useState(1);
     const [fillShape, setFillShape] = useState(false);
     const [selectedShapeMenu, setSelectedShapeMenu] = useState(false);
     const [board, setBoard] = useState(null);
@@ -71,7 +80,8 @@ export default function Board({ shared = false }) {
     const isDrawingRef = useRef(false);
     const activeLineRef = useRef(null);
     const activeLineDataRef = useRef(null);
-    const activeCircleRef = useRef(null);
+    const activeCircleFillRef = useRef(null);
+    const activeCircleStrokeRef = useRef(null);
 
     const isPanningRef = useRef(false);
     const panStartRef = useRef({ x: 0, y: 0 });
@@ -207,6 +217,7 @@ export default function Board({ shared = false }) {
                 y: e.evt.clientY - stage.y(),
             };
             stage.container().style.cursor = 'grabbing';
+            if (eraserCursorRef.current) eraserCursorRef.current.style.display = 'none';
             return;
         }
 
@@ -230,11 +241,12 @@ export default function Board({ shared = false }) {
                 id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, 
                 type: (shapeRef.current === 'circle') ? 'circle' : 'line',
                 points: [pos.x, pos.y, pos.x, pos.y],
-                color: shapeBorderColor,
-                fill: (fillShape && shapeRef.current !== 'line') ? shapeColor : '',
+                color: hexToRgba(shapeBorderColor, shapeBorderOpacity),
+                fill: (fillShape && shapeRef.current !== 'line') ? hexToRgba(shapeColor, shapeFillOpacity) : '',
                 strokeWidth: shapeWidth,
                 globalCompositeOperation: 'source-over',
                 closed: shapeRef.current !== 'line',
+                useMultiply: (fillShape && shapeFillOpacity < 1 && shapeRef.current !== 'line'),
                 tension: 0,
                 lineCap: 'miter',
                 lineJoin: 'miter'
@@ -302,23 +314,33 @@ export default function Board({ shared = false }) {
 
         if (isCircle) {
 
-            if (activeCircleRef.current) {
+            if (activeCircleStrokeRef.current && activeCircleFillRef.current) {
+                const sw = newLine.strokeWidth || 0;
 
-                activeCircleRef.current.x(newLine.points[0]); 
-                activeCircleRef.current.y(newLine.points[1]);
+                activeCircleStrokeRef.current.x(newLine.points[0]); 
+                activeCircleStrokeRef.current.y(newLine.points[1]);
+                activeCircleStrokeRef.current.radius(0); 
+                activeCircleStrokeRef.current.stroke(newLine.color);
+                activeCircleStrokeRef.current.strokeWidth(sw);
+                activeCircleStrokeRef.current.opacity(newLine.opacity);
+                activeCircleStrokeRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
+                activeCircleStrokeRef.current.show();
                 
-                activeCircleRef.current.radius(0); 
-                
-                activeCircleRef.current.stroke(newLine.color);
-                activeCircleRef.current.fill(newLine.fill);
-                activeCircleRef.current.strokeWidth(newLine.strokeWidth);
-                activeCircleRef.current.opacity(newLine.opacity);
-                activeCircleRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
-                
-                activeCircleRef.current.show();
+                if (newLine.fill) {
+                    activeCircleFillRef.current.x(newLine.points[0]); 
+                    activeCircleFillRef.current.y(newLine.points[1]);
+                    activeCircleFillRef.current.radius(0); 
+                    activeCircleFillRef.current.fill(newLine.fill);
+                    activeCircleFillRef.current.opacity(newLine.opacity);
+                    activeCircleFillRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
+                    activeCircleFillRef.current.show();
+                } else {
+                    activeCircleFillRef.current.hide();
+                }
+
                 if (activeLineRef.current) activeLineRef.current.hide();
                 
-                activeCircleRef.current.getLayer().batchDraw();
+                activeCircleStrokeRef.current.getLayer().batchDraw();
             }
 
         } else {
@@ -338,13 +360,14 @@ export default function Board({ shared = false }) {
                 activeLineRef.current.lineJoin(newLine.lineJoin);
                 
                 activeLineRef.current.show();
-                if (activeCircleRef.current) activeCircleRef.current.hide();
+                if (activeCircleStrokeRef.current) activeCircleStrokeRef.current.hide();
+                if (activeCircleFillRef.current) activeCircleFillRef.current.hide();
                 
                 activeLineRef.current.getLayer().batchDraw();
             }
         }
 
-    }, [canDraw, brushColor, highlighterColor, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape]);
+    }, [canDraw, brushColor, highlighterColor, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity]);
 
     const computeTrianglePoints = (xPeak, yPeak, xBase, yBase) => {
                     const dx = xBase - xPeak;
@@ -476,6 +499,8 @@ export default function Board({ shared = false }) {
         else {
             const coalescedEvents = e.evt.getCoalescedEvents ? e.evt.getCoalescedEvents() : [];
             const pts = activeLineDataRef.current.points;
+            const minDistSpace = (MIN_POINT_DISTANCE / pointerScale);
+            const minSpaceSq = minDistSpace * minDistSpace;
             if (coalescedEvents.length > 1) {
                 const rect = stage.container().getBoundingClientRect();
                 for (const ce of coalescedEvents) {
@@ -486,7 +511,7 @@ export default function Board({ shared = false }) {
                     const lastY = pts[pts.length - 1];
                     const dx = pos_x - lastX;
                     const dy = pos_y - lastY;
-                    if (dx * dx + dy * dy >= MIN_POINT_DISTANCE * MIN_POINT_DISTANCE) {
+                    if (dx * dx + dy * dy >= minSpaceSq) {
                         pts.push(pos_x, pos_y);
                     }
                 }
@@ -495,7 +520,7 @@ export default function Board({ shared = false }) {
                 const lastY = pts[pts.length - 1];
                 const dx = pos.x - lastX;
                 const dy = pos.y - lastY;
-                if (dx * dx + dy * dy >= MIN_POINT_DISTANCE * MIN_POINT_DISTANCE) {
+                if (dx * dx + dy * dy >= minSpaceSq) {
                     pts.push(pos.x, pos.y);
                 }
             }
@@ -503,18 +528,24 @@ export default function Board({ shared = false }) {
 
         const isCircle = toolRef.current === 'shape' && shapeRef.current === 'circle';
 
-        if (isCircle && activeCircleRef.current) {
+        if (isCircle && activeCircleStrokeRef.current && activeCircleFillRef.current) {
             const {x_center, y_center, radius} = computeCircleData(activeLineDataRef.current.points);
-            activeCircleRef.current.x(x_center);
-            activeCircleRef.current.y(y_center);
-            activeCircleRef.current.radius(radius);
+            const sw = activeLineDataRef.current.strokeWidth || 0;
+            
+            activeCircleStrokeRef.current.x(x_center);
+            activeCircleStrokeRef.current.y(y_center);
+            activeCircleStrokeRef.current.radius(radius);
+
+            activeCircleFillRef.current.x(x_center);
+            activeCircleFillRef.current.y(y_center);
+            activeCircleFillRef.current.radius(Math.max(0, radius - sw / 2));
         }
 
         else if (!isCircle && activeLineRef.current) {
             activeLineRef.current.points([...activeLineDataRef.current.points]);
         }
         
-        const layer = activeLineRef.current?.getLayer() || activeCircleRef.current?.getLayer();
+        const layer = activeLineRef.current?.getLayer() || activeCircleStrokeRef.current?.getLayer();
         if (layer) layer.batchDraw();
 
         const now = Date.now();
@@ -526,10 +557,12 @@ export default function Board({ shared = false }) {
     }, [canDraw]);
 
     const handlePointerUp = useCallback(() => {
+
         if (isPanningRef.current) {
             isPanningRef.current = false;
             const stage = stageRef.current;
-            stage.container().style.cursor = toolRef.current === 'eraser' ? 'none' : (canDraw ? 'crosshair' : 'default');
+            stage.container().style.cursor = (toolRef.current === 'eraser' ? 'none' : (canDraw ? 'crosshair' : 'default'));
+            if (eraserCursorRef.current && toolRef.current === 'eraser') eraserCursorRef.current.style.display = 'block';
             return; // of course it has to create a mess without the return 
         }
         if (!isDrawingRef.current) return;
@@ -545,6 +578,10 @@ export default function Board({ shared = false }) {
         }
 
         if (toolRef.current === 'highlighter') finishedLine.globalCompositeOperation = 'multiply';
+        if (finishedLine.useMultiply) {
+            finishedLine.globalCompositeOperation = 'multiply';
+            delete finishedLine.useMultiply;
+        }
 
         setLines((prev) => [...prev, finishedLine]);
         linesRef.current = [...(linesRef.current || []), finishedLine];
@@ -554,9 +591,10 @@ export default function Board({ shared = false }) {
             activeLineRef.current.getLayer().batchDraw();
         }
 
-        if (activeCircleRef.current) {
-            activeCircleRef.current.hide();
-            activeCircleRef.current.getLayer().batchDraw();
+        if (activeCircleStrokeRef.current) {
+            activeCircleStrokeRef.current.hide();
+            if (activeCircleFillRef.current) activeCircleFillRef.current.hide();
+            activeCircleStrokeRef.current.getLayer().batchDraw();
         }
 
         activeLineDataRef.current = null;
@@ -801,17 +839,33 @@ export default function Board({ shared = false }) {
 
                         if (line.type === 'circle') {
                             const {x_center, y_center, radius} = computeCircleData(line.points);
+                            const sw = line.strokeWidth || 0;
                             return (
-                                <Circle 
-                                    key={line.id} 
-                                    id={line.id} 
-                                    x={x_center} 
-                                    y={y_center} 
-                                    radius={radius} 
-                                    stroke={line.color} 
-                                    fill={line.fill}
-                                    strokeWidth={line.strokeWidth} 
-                                /> 
+                                <Fragment key={line.id}>
+                                    {line.fill && (
+                                        <Circle
+                                            key={line.id + '_fill'}
+                                            id={line.id}
+                                            x={x_center}
+                                            y={y_center}
+                                            radius={Math.max(0, radius - sw / 2)}
+                                            fill={line.fill}
+                                            globalCompositeOperation={line.globalCompositeOperation}
+                                            listening={true}
+                                        />
+                                    )}
+                                    <Circle
+                                        key={line.id}
+                                        id={line.id}
+                                        x={x_center}
+                                        y={y_center}
+                                        radius={radius}
+                                        stroke={line.color}
+                                        strokeWidth={sw}
+                                        globalCompositeOperation={line.globalCompositeOperation}
+                                        listening={true}
+                                    />
+                                </Fragment>
                             );
                         }
 
@@ -847,7 +901,13 @@ export default function Board({ shared = false }) {
                 
 
                     <Circle 
-                        ref={activeCircleRef}
+                        ref={activeCircleFillRef}
+                        visible={false}  
+                        listening={false}
+                    />
+
+                    <Circle 
+                        ref={activeCircleStrokeRef}
                         visible={false}  
                         listening={false}
                     />
@@ -1003,6 +1063,34 @@ export default function Board({ shared = false }) {
                                 </div>
                                 <input type="color" value={shapeColor} onChange={(e) => { setShapeColor(e.target.value); }} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
                             </label>
+
+                            <div className="w-px h-6 bg-gray-300 mx-1"></div>
+
+                            <div className="flex flex-col gap-1 mx-1" title="Border opacity">
+                                <span className="text-[9px] text-gray-400 leading-none">Border</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={shapeBorderOpacity}
+                                    onChange={(e) => setShapeBorderOpacity(parseFloat(e.target.value))}
+                                    className="w-16 h-1 accent-gray-600 cursor-pointer"
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-1 mx-1" title="Fill opacity">
+                                <span className="text-[9px] text-gray-400 leading-none">Fill</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={shapeFillOpacity}
+                                    onChange={(e) => setShapeFillOpacity(parseFloat(e.target.value))}
+                                    className="w-16 h-1 accent-gray-600 cursor-pointer"
+                                />
+                            </div>
 
                             <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
