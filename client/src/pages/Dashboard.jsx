@@ -354,7 +354,14 @@ export default function Dashboard() {
                                         </div>
                                     ) : (
                                         <div>
-                                            <div className="w-full aspect-[4/3] bg-white border-b border-gray-100" />
+                                            {/*<div className="w-full aspect-[4/3] bg-white border-b border-gray-100" /> */}
+                                            {board.thumbnail ? (
+                                                <img src={board.thumbnail} alt={board.name}
+                                                className="w-full aspect-[4/3] bg-gray-50 border-b border-gray-100 object-contain"
+                                                />
+                                            ) : (
+                                                <div className="w-full aspect-[4/3] bg-gray-50 border-b border-gray-100" />
+                                            )}
                                             <div className="p-3">
                                                 <p className="text-sm text-gray-800 truncate">
                                                     {board.name}

@@ -2,8 +2,10 @@ import {useState, useEffect, useRef, useCallback, Fragment } from "react";
 import {Stage, Layer, Line, Circle } from "react-konva";
 import { useParams, useNavigate, data } from "react-router-dom";
 import { io } from "socket.io-client"
-import { Pencil, Eraser, Minus, Share2, Plus, Undo2, Redo2, Users, ArrowLeft, MessageCircle, Highlighter, Copy, Check, UserPlus, X, Shapes, Triangle, Square, Circle as CircleIcon, PaintBucket } from "lucide-react";
+import { Pencil, Eraser, Minus, Share2, Plus, Undo2, Redo2, Users, ArrowLeft, MessageCircle, Highlighter, Copy, Check, UserPlus, X, Shapes, Triangle, Square, Circle as CircleIcon, PaintBucket, Download, FileText } from "lucide-react";
 import { apiFetch } from "../api";
+import { jsPDF } from "jspdf";
+import Konva from 'konva';
 
 const SOCKET_URL = import.meta.env.VITE_SERVER_URL;
 
@@ -58,6 +60,8 @@ export default function Board({ shared = false }) {
     const [shapeWidth, setShapeWidth] = useState(5);
     const [eraserSize, setEraserSize] = useState(10);
     const [highlighterSize, setHighlighterSize] = useState(30);
+    const [highlighterOpacity, setHighlighterOpacity] = useState(0.3);
+    const [selectedHighlighterMenu, setSelectedHighlighterMenu] = useState(false);
     const [peers, setPeers] = useState(0);
     const [shareUrl, setShareUrl] = useState("");
     const [copied, setCopied] = useState(false);
@@ -222,6 +226,7 @@ export default function Board({ shared = false }) {
         }
 
         if (!canDraw || e.evt.button !== 0) return;
+        e.evt.preventDefault();
         isDrawingRef.current = true;
 
         // const pos = stageRef.current.getPointerPosition();
@@ -298,7 +303,7 @@ export default function Board({ shared = false }) {
                 points: [pos.x, pos.y, pos.x, pos.y],
                 color: (toolRef.current == 'highlighter') ? highlighterColor : brushColor,
                 strokeWidth: (toolRef.current === 'highlighter') ? highlighterSize : strokeWidth,
-                opacity: (toolRef.current === 'highlighter') ? 0.3 : 1,
+                opacity: (toolRef.current === 'highlighter') ? highlighterOpacity : 1,
                 globalCompositeOperation: 'source-over',
                 closed: false,
                 tension: 0.3,
@@ -367,7 +372,7 @@ export default function Board({ shared = false }) {
             }
         }
 
-    }, [canDraw, brushColor, highlighterColor, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity]);
+    }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity]);
 
     const computeTrianglePoints = (xPeak, yPeak, xBase, yBase) => {
                     const dx = xBase - xPeak;
@@ -417,6 +422,134 @@ export default function Board({ shared = false }) {
             radius: radius
         };
     };
+
+    function getSmallestRectangle(lines) {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity; // this is JS, therefore: Math.max = -∞, and Math.min = ∞
+
+        for (const line of lines) {
+            if (line.type === 'circle') {
+                const {x_center, y_center, radius} = computeCircleData(line.points);
+                const sw = line.strokeWidth || 0;
+                minX = Math.min(minX, x_center - radius - sw);
+                minY = Math.min(minY, y_center - radius - sw);
+                maxX = Math.max(maxX, x_center + radius + sw);
+                maxY = Math.max(maxY, y_center + radius + sw);
+            } else {
+                const sw = line.strokeWidth || 0;
+                for (let i = 0; i < line.points.length; i += 2) {
+                    minX = Math.min(minX, line.points[i] - sw);
+                    minY = Math.min(minY, line.points[i + 1] - sw);
+                    maxX = Math.max(maxX, line.points[i] + sw);
+                    maxY = Math.max(maxY, line.points[i + 1] + sw);
+                }
+            }
+        }
+
+        const padding = 20;
+        console.log(minX, minY, maxX, maxY)
+        return {
+            x: minX - padding,
+            y: minY - padding,
+            width: maxX - minX + 2 * padding,
+            height: maxY - minY + 2 * padding
+        };
+    }
+    function addTempBG(layer, box) {
+        const bg = new Konva.Rect({
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+            fill: '#ffffff',
+        });
+        layer.add(bg);
+        bg.moveToBottom();
+        return bg;
+    }
+    function exportToPng() {
+        if (!lines.length) return;
+        const box = getSmallestRectangle(lines);
+        const layer = stageRef.current.findOne('.draw-layer');
+        const bg = addTempBG(layer,box);
+        const dataUrl = layer.toDataURL({
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+            pixelRatio: 2,
+            mimeType: 'image/jpeg',  // or 'image/jpeg'
+        });
+        bg.destroy();
+
+        const link = document.createElement('a');
+        link.download = `${board?.name || 'board'}.png`;
+        link.href = dataUrl;
+        link.click();
+    }
+
+    function exportToPDF() {
+        if (!lines.length) return;
+        const box = getSmallestRectangle(lines);
+        const layer = stageRef.current.findOne('.draw-layer');
+        const bg = addTempBG(layer,box);
+        const dataUrl = layer.toDataURL({
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+            pixelRatio: 2,
+            mimeType: 'image/jpeg',  // or 'image/jpeg'
+        });
+        bg.destroy();
+
+        const orientation = box.width > box.height ? 'landscape' : 'portrait';
+        const pdf = new jsPDF(orientation, 'px', [box.width, box.height]);
+        pdf.addImage(dataUrl, 'PNG', 0, 0, box.width, box.height);
+        pdf.save(`${board?.name || 'board'}.pdf`);
+    }
+
+    function generateThumbnail(mw = 400) {
+        const stage = stageRef.current;
+        if (!stage || !linesRef?.current.length) return null;
+
+        stage.position({ x: 0, y: 0 });
+        stage.scale({ x: 1, y: 1 });
+
+        const viewW = stage.width();
+        const viewH = stage.height();
+
+        const captureW = Math.min(viewW, viewH * (4 / 3));
+        const captureH = captureW * (3 / 4);
+
+        const cropX = (viewW - captureW) / 2;
+        const cropY = (viewH - captureH) / 2;
+
+        const pixelRatio = mw / captureW;
+
+        return stage.toDataURL({
+            x: cropX,
+            y: cropY,
+            width: captureW,
+            height: captureH,
+            pixelRatio: pixelRatio,
+            mimeType: 'image/png', 
+        });
+    }
+
+    async function saveThumbnail() {
+        if (!lines.length || !stageRef.current || shared) return;
+        const dataUrl = generateThumbnail(400);
+        if (!dataUrl) return;
+
+        try {
+            await apiFetch(`/boards/${id}/thumbnail`, {
+                method: 'PUT',
+                body: JSON.stringify({ thumbnail: dataUrl }),
+            });
+        } catch (err) {
+            console.error("Failed to save thumbnail:", err);
+        }
+    }
 
     const handlePointerMove = useCallback((e) => {
 
@@ -557,7 +690,6 @@ export default function Board({ shared = false }) {
     }, [canDraw]);
 
     const handlePointerUp = useCallback(() => {
-
         if (isPanningRef.current) {
             isPanningRef.current = false;
             const stage = stageRef.current;
@@ -585,6 +717,7 @@ export default function Board({ shared = false }) {
 
         setLines((prev) => [...prev, finishedLine]);
         linesRef.current = [...(linesRef.current || []), finishedLine];
+        // console.log(getSmallestRectangle(linesRef.current));
 
         if (activeLineRef.current) {
             activeLineRef.current.hide();
@@ -611,9 +744,8 @@ export default function Board({ shared = false }) {
             
             return {history: newHistory, editIndex: newHistory.length - 1};
         });
-
+        
         socketRef.current?.emit('board:draw:line', finishedLine);
-                 
     }, []);
 
     const handlePointerEnter = useCallback(() => {
@@ -831,7 +963,8 @@ export default function Board({ shared = false }) {
                     onWheel={handleWheel}
                     style={{
                         cursor: tool === 'eraser' ? 'none' : (canDraw ? 'crosshair' : 'default'),
-                        display:'block'
+                        display:'block',
+                        touchAction: 'none'
                     }}
             >
                 <Layer name="draw-layer">
@@ -927,7 +1060,7 @@ export default function Board({ shared = false }) {
             />
 
             <div className="absolute top-2 left-2 flex items-center gap-2 pointer-events-auto">
-                <button onClick={() => navigate('/')} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900">
+                <button onClick={() => {navigate('/'); saveThumbnail();}} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900">
                     <ArrowLeft size={14} />
                 </button>
 
@@ -972,6 +1105,7 @@ export default function Board({ shared = false }) {
                             onClick={() => {
                                 setTool("pen");
                                 setSelectedShapeMenu(false);
+                                setSelectedHighlighterMenu(false);
                             }}
                             title="Pen"
                         >
@@ -983,17 +1117,40 @@ export default function Board({ shared = false }) {
                             onClick={() => {
                                 setTool("highlighter");
                                 setSelectedShapeMenu(false);
+                                setSelectedHighlighterMenu(prev => !prev);
                             }}
                             title="highlighter"
                         >
                             <Highlighter size={18} />
                         </ToolButton>
 
+                        <div 
+                            id='highlighter_op_selector' 
+                            className="absolute bottom-14 left-6 bg-white flex items-center gap-1 px-2 py-4 border border-gray-200 rounded-2xl"
+                            style = {{display: (tool === 'highlighter' && selectedHighlighterMenu) ? 'flex' : 'none'}}
+                        >
+
+                            <div className="flex flex-col gap-1 mx-1" title="Highlighter opacity">
+                                <span className="text-[9px] text-gray-400 leading-none pb-1">Opacity</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="1"
+                                    step="0.05"
+                                    value={highlighterOpacity}
+                                    onChange={(e) => setHighlighterOpacity(parseFloat(e.target.value))}
+                                    className="w-16 h-1 accent-gray-900 cursor-pointer"
+                                />
+                            </div>                            
+
+                        </div>
+
                         <ToolButton
                             active={tool === "eraser"}
                             onClick={() => {
                                 setTool("eraser");
                                 setSelectedShapeMenu(false);
+                                setSelectedHighlighterMenu(false);
                             }}
                             title="Eraser"
                         >
@@ -1005,6 +1162,7 @@ export default function Board({ shared = false }) {
                             onClick={() => {
                                 setTool('shape');
                                 setSelectedShapeMenu(prev => !prev);
+                                setSelectedHighlighterMenu(false);
                             }}
                             title="Shape"
                         >
@@ -1076,7 +1234,7 @@ export default function Board({ shared = false }) {
                             <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
                             <div className="flex flex-col gap-1 mx-1" title="Border opacity">
-                                <span className="text-[9px] text-gray-400 leading-none">Border</span>
+                                <span className="text-[9px] text-gray-400 leading-none pb-1">Border</span>
                                 <input
                                     type="range"
                                     min="0"
@@ -1084,12 +1242,12 @@ export default function Board({ shared = false }) {
                                     step="0.05"
                                     value={shapeBorderOpacity}
                                     onChange={(e) => setShapeBorderOpacity(parseFloat(e.target.value))}
-                                    className="w-16 h-1 accent-gray-600 cursor-pointer"
+                                    className="w-16 h-1 accent-gray-900 cursor-pointer"
                                 />
                             </div>
 
                             <div className="flex flex-col gap-1 mx-1" title="Fill opacity">
-                                <span className="text-[9px] text-gray-400 leading-none">Fill</span>
+                                <span className="text-[9px] text-gray-400 leading-none pb-1">Fill</span>
                                 <input
                                     type="range"
                                     min="0"
@@ -1097,7 +1255,7 @@ export default function Board({ shared = false }) {
                                     step="0.05"
                                     value={shapeFillOpacity}
                                     onChange={(e) => setShapeFillOpacity(parseFloat(e.target.value))}
-                                    className="w-16 h-1 accent-gray-600 cursor-pointer"
+                                    className="w-16 h-1 accent-gray-900 cursor-pointer"
                                 />
                             </div>
 
@@ -1297,12 +1455,31 @@ export default function Board({ shared = false }) {
                             </div>
                         )}
 
+                        <div className="border-t border-gray-100 my-4" />
+                        <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">Export</p>
+                        <div className="flex gap-2 mb-3">
+                            <button onClick={exportToPng} disabled={!lines.length}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 hover:bg-gray-200 transition text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                <Download size={14} />
+                                PNG
+                            </button>
+                            <button onClick={exportToPDF} disabled={!lines.length}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 hover:bg-gray-200 transition text-sm cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                <FileText size={14} />
+                                PDF
+                            </button>
+                        </div>
+
                         <button
                             onClick={() => { setShowShareModal(false); setShareUrl(''); setShareUserMsg(''); }}
                             className="mt-2 w-full py-2 rounded-xl bg-gray-100 border border-gray-200 text-gray-500 hover:text-gray-900 transition text-sm cursor-pointer"
                         >
                             Close
                         </button>
+
+                        
                     </div>
                 </div>
             )}

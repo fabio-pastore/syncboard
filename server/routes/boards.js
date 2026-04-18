@@ -4,6 +4,7 @@ const Board = require('../models/Board');
 const authMiddleware = require('../middleware/auth')
 
 const router = express.Router();
+const MAX_TB_SIZE = 150000
 
 router.use(authMiddleware);
 
@@ -172,6 +173,34 @@ router.delete('/:id', async (req, res) => {
         });
         if (!board) return res.status(404).json({ error: 'Board not found'})
         res.json({ message: 'Board deleted successfully'});
+    } catch (err) {
+        res.status(500).json( {error: 'Server error'});
+    }
+})
+
+// PUT /api/boards/:id/thumbnail
+router.put('/:id/thumbnail', async (req, res) => {
+    try {
+        const { thumbnail } = req.body;
+        if (!thumbnail || typeof thumbnail !== 'string') {
+            return res.status(400).json({ error: 'Thumbnail is required' });
+        }
+
+        if (thumbnail.length > MAX_TB_SIZE) {
+            return res.status(400).json({ error: 'Thumbnail is too large' });
+        }
+
+        const board = await Board.findOneAndUpdate(
+            {
+                _id: req.params.id,
+                $or : [
+                    { owner : req.userId },
+                    { 'sharedWith' : { $elemMatch : { user: req.userId, role: 'editor' } } }
+                ]
+            }, { thumbnail }, { new: true }
+        );
+        if (!board) return res.status(404).json({ error: 'Board not found' });
+        res.json({ message: 'Thumbnail saved'});;
     } catch (err) {
         res.status(500).json( {error: 'Server error'});
     }
