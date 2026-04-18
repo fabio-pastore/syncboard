@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../api';
 import { useNavigate } from 'react-router-dom';
-import { Home, ChevronRight, ArrowLeft, Plus, FolderOpen, Paintbrush, Pencil, Trash2, Inbox, X, Users } from 'lucide-react';
+import folderIcon from '../assets/icons/folder.png';
 
 export default function Dashboard() {
 
@@ -12,7 +12,7 @@ export default function Dashboard() {
     const [boards, setBoards] = useState([]);
     const [sharedBoards, setSharedBoards] = useState([]);
     const [currentFolder, setCurrentFolder] = useState(null);
-    const [folderPath, setFolderPath] = useState([]); // this is an array of folder ids that represents the path to the current folder, so we can easily navigate back up the folder tree
+    const [folderPath, setFolderPath] = useState([]);
     const [newFolderName, setFolderName] = useState('');
     const [newBoardName, setBoardName] = useState('');
     const [editingFolder, setEditingFolder] = useState(null);
@@ -51,10 +51,8 @@ export default function Dashboard() {
     }
 
     function openFolder(folder) {
-        // currentFolder = null - folderPath = []
         setFolderPath((prev) => [...prev, { id: currentFolder, name: folder.name }]);
         setCurrentFolder(folder._id);
-        loadContents();
     }
 
     function goBack() {
@@ -62,13 +60,11 @@ export default function Dashboard() {
         const parent = prev.pop();
         setFolderPath(prev);
         setCurrentFolder(parent?.id || null)
-        loadContents();
     }
 
     function goHome() {
         setFolderPath([]);
         setCurrentFolder(null);
-        loadContents();
     }
 
     async function createFolder(e) {
@@ -127,31 +123,34 @@ export default function Dashboard() {
     }
     
     return (
-        <div className="min-h-screen bg-gray-950 text-gray-300">
-            <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800">
-                <h1 className="text-xl font-semibold text-white">SyncBoard</h1>
-                <div className="flex items-center gap-3">
-                    <span>
-                        Welcome back, <b>{user.username}!</b>
+        <div className="min-h-screen bg-white text-gray-700">
+            <header className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                <h1 className="text-xl font-semibold">
+                    <span className="text-violet-600">Sync</span>
+                    <span className="text-gray-900">Board</span>
+                </h1>
+                <div className="flex items-center gap-3 text-sm">
+                    <span className="text-gray-500">
+                        Welcome back, <b className="text-gray-800">{user.username}</b>
                     </span>
                     <button
                         onClick={logout}
-                        className="px-3 py-1.5 text-sm rounded-lg bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition cursor-pointer"
+                        className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition cursor-pointer"
                     >
                         Logout
                     </button>
                 </div>
             </header>
 
-            <main className="max-w-6xl mx-auto px-6 py-6">
+            <main className="max-w-6xl mx-auto px-6 py-8">
                 {error && (
-                    <div className="mb-4 px-4 py-2 rounded-lg bg-red-900/40 border border-red-700 text-red-300 flex items-center justify-between">
+                    <div className="mb-4 px-4 py-2 rounded-lg bg-red-50 border border-red-200 text-red-600 flex items-center justify-between text-sm">
                         <span>{error}</span>
                         <button
                             onClick={() => setError('')}
-                            className="ml-4 text-red-400 hover:text-red-200 cursor-pointer"
+                            className="ml-4 text-red-400 hover:text-red-600 cursor-pointer text-lg leading-none"
                         >
-                            <X size={16} />
+                            &times;
                         </button>
                     </div>
                 )}
@@ -159,22 +158,22 @@ export default function Dashboard() {
                 <nav className="flex items-center gap-1 text-sm mb-6 flex-wrap">
                     <button
                         onClick={goHome}
-                        className="text-violet-400 hover:text-violet-300 hover:underline cursor-pointer font-medium"
+                        className="text-violet-600 hover:text-violet-700 hover:underline cursor-pointer font-medium"
                     >
-                        <Home size={14} />Home
+                        Home
                     </button>
                     {folderPath.map((f, i) => (
                         <span key={i} className="flex items-center gap-1">
-                            <ChevronRight size={14} className="text-gray-600" />
-                            <span className="text-gray-400">{f.name}</span>
+                            <span className="text-gray-300">/</span>
+                            <span className="text-gray-500">{f.name}</span>
                         </span>
                     ))}
                     {currentFolder && (
                         <button
                             onClick={goBack}
-                            className="ml-4 text-sm text-gray-500 hover:text-gray-300 cursor-pointer"
+                            className="ml-4 text-sm text-gray-400 hover:text-gray-600 cursor-pointer"
                         >
-                            <ArrowLeft size={14} /> Back
+                            &larr; Back
                         </button>
                     )}
                 </nav>
@@ -186,13 +185,13 @@ export default function Dashboard() {
                             placeholder="New folder name"
                             value={newFolderName}
                             onChange={(e) => setFolderName(e.target.value)}
-                            className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 outline-none focus:border-violet-500 transition text-sm w-48"
+                            className="px-3 py-2 rounded-lg border border-gray-200 text-gray-800 placeholder-gray-400 outline-none focus:border-violet-400 transition text-sm w-48"
                         />
                         <button
                             type="submit"
-                            className="px-4 py-2 rounded-lg bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition text-sm cursor-pointer"
+                            className="px-4 py-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition text-sm cursor-pointer"
                         >
-                            <Plus size={14} /> Folder
+                            + Folder
                         </button>
                     </form>
 
@@ -202,27 +201,27 @@ export default function Dashboard() {
                             placeholder="New board name"
                             value={newBoardName}
                             onChange={(e) => setBoardName(e.target.value)}
-                            className="px-3 py-2 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 outline-none focus:border-violet-500 transition text-sm w-48"
+                            className="px-3 py-2 rounded-lg border border-gray-200 text-gray-800 placeholder-gray-400 outline-none focus:border-violet-400 transition text-sm w-48"
                         />
                         <button
                             type="submit"
                             className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white transition text-sm cursor-pointer"
                         >
-                            <Plus size={14} /> Board
+                            + Board
                         </button>
                     </form>
                 </div>
 
                 {folders.length > 0 && (
                     <section className="mb-8">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
                             Folders
                         </h2>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                             {folders.map((folder) => (
                                 <div
                                     key={folder._id}
-                                    className="group relative bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition cursor-pointer"
+                                    className="group relative bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition cursor-pointer"
                                 >
                                     {editingFolder === folder._id ? (
                                         <form
@@ -240,7 +239,7 @@ export default function Dashboard() {
                                                     setEditName(e.target.value)
                                                 }
                                                 autoFocus
-                                                className="px-2 py-1 rounded bg-gray-800 border border-gray-700 text-white text-sm outline-none focus:border-violet-500"
+                                                className="px-2 py-1 rounded border border-gray-200 text-gray-800 text-sm outline-none focus:border-violet-400"
                                             />
                                             <div className="flex gap-1">
                                                 <button
@@ -255,7 +254,7 @@ export default function Dashboard() {
                                                         setEditingFolder(null);
                                                         setEditName('');
                                                     }}
-                                                    className="text-xs px-2 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600 cursor-pointer"
+                                                    className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 cursor-pointer"
                                                 >
                                                     Cancel
                                                 </button>
@@ -263,14 +262,13 @@ export default function Dashboard() {
                                         </form>
                                     ) : (
                                         <div onClick={() => openFolder(folder)}>
-                                            <FolderOpen size={28} className="text-yellow-500 mb-2" />
-                                            <p className="text-sm text-white truncate">
+                                            <img src={folderIcon} alt="Folder" className="w-8 h-8 mb-2" />
+                                            <p className="text-sm text-gray-800 truncate">
                                                 {folder.name}
                                             </p>
                                         </div>
                                     )}
 
-                                    {/* Actions (visible on hover) */}
                                     {editingFolder !== folder._id && (
                                         <div className="absolute top-2 right-2 hidden group-hover:flex gap-1">
                                             <button
@@ -280,20 +278,20 @@ export default function Dashboard() {
                                                     setEditingBoard(null);
                                                     setEditName(folder.name);
                                                 }}
-                                                className="p-1 rounded bg-gray-800 text-gray-400 hover:text-white text-xs cursor-pointer"
+                                                className="p-1 rounded border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 text-xs cursor-pointer"
                                                 title="Rename"
                                             >
-                                                <Pencil size={12} />
+                                                &#9998;
                                             </button>
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     deleteFolder(folder._id);
                                                 }}
-                                                className="p-1 rounded bg-gray-800 text-gray-400 hover:text-red-400 text-xs cursor-pointer"
+                                                className="p-1 rounded border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs cursor-pointer"
                                                 title="Delete"
                                             >
-                                                <Trash2 size={12} />
+                                                &times;
                                             </button>
                                         </div>
                                     )}
@@ -303,71 +301,73 @@ export default function Dashboard() {
                     </section>
                 )}
 
-                {/* Boards */}
                 {boards.length > 0 && (
                     <section className="mb-8">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
                             Boards
                         </h2>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                             {boards.map((board) => (
                                 <div
                                     key={board._id}
-                                    className="group relative bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-violet-600 transition cursor-pointer"
+                                    className="group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:border-violet-400 hover:shadow-sm transition cursor-pointer"
                                     onClick={() => navigate(`/board/${board._id}`)}
                                 >
                                     {editingBoard === board._id ? (
-                                        <form
-                                            onSubmit={(e) => {
-                                                e.preventDefault();
-                                                renameBoard(board._id);
-                                            }}
-                                            className="flex flex-col gap-2"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <input
-                                                type="text"
-                                                value={editName}
-                                                onChange={(e) =>
-                                                    setEditName(e.target.value)
-                                                }
-                                                autoFocus
-                                                className="px-2 py-1 rounded bg-gray-800 border border-gray-700 text-white text-sm outline-none focus:border-violet-500"
-                                            />
-                                            <div className="flex gap-1">
-                                                <button
-                                                    type="submit"
-                                                    className="text-xs px-2 py-1 rounded bg-violet-600 text-white hover:bg-violet-700 cursor-pointer"
-                                                >
-                                                    Save
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setEditingBoard(null);
-                                                        setEditName('');
-                                                    }}
-                                                    className="text-xs px-2 py-1 rounded bg-gray-700 text-gray-300 hover:bg-gray-600 cursor-pointer"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        </form>
+                                        <div className="p-4">
+                                            <form
+                                                onSubmit={(e) => {
+                                                    e.preventDefault();
+                                                    renameBoard(board._id);
+                                                }}
+                                                className="flex flex-col gap-2"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <input
+                                                    type="text"
+                                                    value={editName}
+                                                    onChange={(e) =>
+                                                        setEditName(e.target.value)
+                                                    }
+                                                    autoFocus
+                                                    className="px-2 py-1 rounded border border-gray-200 text-gray-800 text-sm outline-none focus:border-violet-400"
+                                                />
+                                                <div className="flex gap-1">
+                                                    <button
+                                                        type="submit"
+                                                        className="text-xs px-2 py-1 rounded bg-violet-600 text-white hover:bg-violet-700 cursor-pointer"
+                                                    >
+                                                        Save
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setEditingBoard(null);
+                                                            setEditName('');
+                                                        }}
+                                                        className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 cursor-pointer"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
                                     ) : (
                                         <div>
-                                            <Paintbrush size={28} className="text-violet-400 mb-2" />
-                                            <p className="text-sm text-white truncate">
-                                                {board.name}
-                                            </p>
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                {new Date(
-                                                    board.updatedAt
-                                                ).toLocaleDateString()}
-                                            </p>
+                                            <div className="w-full aspect-[4/3] bg-white border-b border-gray-100" />
+                                            <div className="p-3">
+                                                <p className="text-sm text-gray-800 truncate">
+                                                    {board.name}
+                                                </p>
+                                                <p className="text-xs text-gray-400 mt-0.5">
+                                                    {new Date(
+                                                        board.updatedAt
+                                                    ).toLocaleDateString()}
+                                                </p>
+                                            </div>
                                         </div>
                                     )}
 
-                                    {/* Actions (visible on hover) */}
                                     {editingBoard !== board._id && (
                                         <div className="absolute top-2 right-2 hidden group-hover:flex gap-1">
                                             <button
@@ -377,20 +377,20 @@ export default function Dashboard() {
                                                     setEditingFolder(null);
                                                     setEditName(board.name);
                                                 }}
-                                                className="p-1 rounded bg-gray-800 text-gray-400 hover:text-white text-xs cursor-pointer"
+                                                className="p-1 rounded bg-white/80 border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-white text-xs cursor-pointer"
                                                 title="Rename"
                                             >
-                                            <Pencil size={12} />
+                                                &#9998;
                                             </button>
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     deleteBoard(board._id);
                                                 }}
-                                                className="p-1 rounded bg-gray-800 text-gray-400 hover:text-red-400 text-xs cursor-pointer"
+                                                className="p-1 rounded bg-white/80 border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs cursor-pointer"
                                                 title="Delete"
                                             >
-                                                <Trash2 size={12} />
+                                                &times;
                                             </button>
                                         </div>
                                     )}
@@ -400,28 +400,28 @@ export default function Dashboard() {
                     </section>
                 )}
 
-                {/* Empty state */}
-                {/* Shared with me */}
                 {sharedBoards.length > 0 && !currentFolder && (
                     <section className="mb-8">
-                        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-1">
-                            <Users size={12} /> Shared with me
+                        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
+                            Shared with me
                         </h2>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                             {sharedBoards.map((board) => (
                                 <div
                                     key={board._id}
-                                    className="group relative bg-gray-900 border border-gray-800 rounded-xl p-4 hover:border-violet-600 transition cursor-pointer"
+                                    className="group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:border-violet-400 hover:shadow-sm transition cursor-pointer"
                                     onClick={() => navigate(`/board/${board._id}`)}
                                 >
-                                    <Paintbrush size={28} className="text-violet-400 mb-2" />
-                                    <p className="text-sm text-white truncate">{board.name}</p>
-                                    <p className="text-xs text-gray-500 mt-1">
-                                        by {board.owner?.username || 'unknown'}
-                                    </p>
-                                    <p className="text-xs text-gray-500">
-                                        {new Date(board.updatedAt).toLocaleDateString()}
-                                    </p>
+                                    <div className="w-full aspect-[4/3] bg-white border-b border-gray-100" />
+                                    <div className="p-3">
+                                        <p className="text-sm text-gray-800 truncate">{board.name}</p>
+                                        <p className="text-xs text-gray-400 mt-0.5">
+                                            by {board.owner?.username || 'unknown'}
+                                        </p>
+                                        <p className="text-xs text-gray-400">
+                                            {new Date(board.updatedAt).toLocaleDateString()}
+                                        </p>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -429,11 +429,9 @@ export default function Dashboard() {
                 )}
 
                 {folders.length === 0 && boards.length === 0 && sharedBoards.length === 0 && (
-                    <div className="text-center py-20 text-gray-500">
-                        <Inbox size={48} className="mx-auto mb-4 text-gray-600" />
+                    <div className="text-center py-20 text-gray-400">
                         <p className="text-lg">
-                            Nothing here yet. Create a folder or board to get
-                            started.
+                            Nothing here yet. Create a folder or board to get started.
                         </p>
                     </div>
                 )}

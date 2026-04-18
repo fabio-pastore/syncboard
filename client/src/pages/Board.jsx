@@ -969,7 +969,10 @@ export default function Board({ shared = false }) {
                     <div className="absolute bottom-6 left-1/2 bg-white flex items-center gap-1 px-3 py-2 -translate-x-1/2 border border-gray-200 rounded-2xl backdrop-blur-md shadow-2xl">
                         <ToolButton
                             active={tool === "pen"}
-                            onClick={() => setTool("pen")}
+                            onClick={() => {
+                                setTool("pen");
+                                setSelectedShapeMenu(false);
+                            }}
                             title="Pen"
                         >
                             <Pencil size={18} /> 
@@ -977,7 +980,10 @@ export default function Board({ shared = false }) {
 
                         <ToolButton
                             active={tool === "highlighter"}
-                            onClick={() => setTool("highlighter")}
+                            onClick={() => {
+                                setTool("highlighter");
+                                setSelectedShapeMenu(false);
+                            }}
                             title="highlighter"
                         >
                             <Highlighter size={18} />
@@ -985,7 +991,10 @@ export default function Board({ shared = false }) {
 
                         <ToolButton
                             active={tool === "eraser"}
-                            onClick={() => setTool("eraser")}
+                            onClick={() => {
+                                setTool("eraser");
+                                setSelectedShapeMenu(false);
+                            }}
                             title="Eraser"
                         >
                             <Eraser size={18} />
