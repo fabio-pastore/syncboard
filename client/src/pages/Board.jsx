@@ -2,7 +2,7 @@ import {useState, useEffect, useRef, useCallback, Fragment } from "react";
 import {Stage, Layer, Line, Circle } from "react-konva";
 import { useParams, useNavigate, data } from "react-router-dom";
 import { io } from "socket.io-client"
-import { Pencil, Eraser, Minus, Share2, Plus, Undo2, Redo2, Users, ArrowLeft, MessageCircle, Highlighter, Copy, Check, UserPlus, X, Shapes, Triangle, Square, Circle as CircleIcon, PaintBucket, Download, FileText } from "lucide-react";
+import { Pencil, Eraser, Minus, Share2, Plus, Undo2, Redo2, Users, ArrowLeft, MessageCircle, Highlighter, Copy, Check, UserPlus, X, Shapes, Triangle, Square, Circle as CircleIcon, PaintBucket, Download, FileText, LassoSelect } from "lucide-react";
 import { apiFetch } from "../api";
 import { jsPDF } from "jspdf";
 import Konva from 'konva';
@@ -86,6 +86,10 @@ export default function Board({ shared = false }) {
     const activeLineDataRef = useRef(null);
     const activeCircleFillRef = useRef(null);
     const activeCircleStrokeRef = useRef(null);
+
+    const touchCountRef = useRef(0);
+    const lastTouchCenterRef = useRef(null);
+    const lastPinchDistRef = useRef(null);
 
     const isPanningRef = useRef(false);
     const panStartRef = useRef({ x: 0, y: 0 });
@@ -207,11 +211,113 @@ export default function Board({ shared = false }) {
         return () => { socketRef.current?.disconnect(); }
     }, [id, token, shared]);
 
+    useEffect(() => {
+        const container = stageRef.current?.container();
+        if (!container) return;
+
+        const handleTouchStart = (e) => {
+            touchCountRef.current = e.touches.length;
+            if (e.touches.length >= 2) {
+                isDrawingRef.current = false;
+                activeLineDataRef.current = null;
+                if (activeLineRef.current) activeLineRef.current.hide();
+
+                isPanningRef.current = true;
+                const t1 = e.touches[0], t2 = e.touches[1];
+                lastTouchCenterRef.current = {
+                    x: (t1.clientX + t2.clientX) / 2,
+                    y: (t1.clientY + t2.clientY) / 2,
+                };
+
+                lastPinchDistRef.current = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+            }
+        };
+
+        const handleTouchMove = (e) => {
+            if (e.touches.length >= 2) {
+                e.preventDefault();
+                const t1 = e.touches[0], t2 = e.touches[1];
+                const center = {
+                    x: (t1.clientX + t2.clientX) / 2,
+                    y: (t1.clientY + t2.clientY) / 2,
+                };
+                const stage = stageRef.current;
+                const oldScale = stage.scaleX();
+
+                // const dx = center.x - lastTouchCenterRef.current.x;
+                // const dy = center.y - lastTouchCenterRef.current.y;
+                // const newPos = {x : stage.x() + dx, y: stage.y() + dy};
+                // stage.position(newPos);
+                // stagePositionRef.current = newPos;
+
+                const pointTo = {
+                    x: (lastTouchCenterRef.current.x - stage.x()) / oldScale,
+                    y: (lastTouchCenterRef.current.y - stage.y()) / oldScale,
+                };
+
+                const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+
+                const newScale = lastPinchDistRef.current ? Math.max(0.1, Math.min(10, oldScale * (dist / lastPinchDistRef.current))) : oldScale;
+                stage.scale({ x: newScale, y: newScale });
+                setScale(newScale);
+
+                const newPos = {
+                    x: center.x - pointTo.x * newScale,
+                    y: center.y - pointTo.y * newScale,
+                };
+
+                stage.position(newPos);
+                stagePositionRef.current = newPos;
+                lastTouchCenterRef.current = center;
+                lastPinchDistRef.current = dist;
+
+                // if (lastPinchDistRef.current) {
+                //     const scaleBy = dist / lastPinchDistRef.current;
+                //     const oldScale = stage.scaleX();
+                //     const newScale = Math.max(0.1, Math.min(10, oldScale * scaleBy));
+                //     const mousePointTo = {
+                //         x: (center.x - stage.x()) / oldScale,
+                //         y: (center.y - stage.y()) / oldScale,
+                //     };
+                //     stage.scale({ x: newScale, y: newScale });
+                //     setScale(newScale);
+                //     const zoomPos = {
+                //         x: center.x - mousePointTo.x * newScale,
+                //         y: center.y - mousePointTo.y * newScale,
+                //     };
+                //     stage.position(zoomPos);
+                //     stagePositionRef.current = zoomPos;
+                // }
+            }
+        };
+
+        const handleTouchEnd = (e) => {
+            touchCountRef.current = e.touches.length;
+            if (e.touches.length < 2) {
+                isPanningRef.current = false;
+                lastPinchDistRef.current = null;
+                lastTouchCenterRef.current = null;
+            }
+        };
+
+        container.addEventListener('touchstart', handleTouchStart, { passive: false });
+        container.addEventListener('touchmove', handleTouchMove, { passive: false });
+        container.addEventListener('touchend', handleTouchEnd, { passive: false });
+        container.addEventListener('touchcancel', handleTouchEnd);
+        return () => {
+            container.removeEventListener('touchstart', handleTouchStart);
+            container.removeEventListener('touchmove', handleTouchMove);
+            container.removeEventListener('touchend', handleTouchEnd);
+            container.removeEventListener('touchcancel', handleTouchEnd);
+        };
+    }, []);
+
     const [role, setRole] = useState('editor'); // editor or viewer
 
     const canDraw = (role === 'editor');
 
     const handlePointerDown = useCallback((e) => {
+        if (touchCountRef.current >= 2 || isPanningRef.current) return;
         if (e.evt.button === 1) {
             e.evt.preventDefault();
             isPanningRef.current = true;
@@ -224,6 +330,7 @@ export default function Board({ shared = false }) {
             if (eraserCursorRef.current) eraserCursorRef.current.style.display = 'none';
             return;
         }
+        if (e.evt.pointerType === 'touch') return;
 
         if (!canDraw || e.evt.button !== 0) return;
         e.evt.preventDefault();
@@ -241,9 +348,9 @@ export default function Board({ shared = false }) {
             x: (pointerPos.x - stage.x()) / pointerScale,
             y: (pointerPos.y - stage.y()) / pointerScale,
             };
-
+            
             newLine = {
-                id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, 
+                id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, // ID cursed by Tutankhamon in 1320 B.C.
                 type: (shapeRef.current === 'circle') ? 'circle' : 'line',
                 points: [pos.x, pos.y, pos.x, pos.y],
                 color: hexToRgba(shapeBorderColor, shapeBorderOpacity),
@@ -295,13 +402,12 @@ export default function Board({ shared = false }) {
             y: (pointerPos.y - stage.y()) / pointerScale,
         };
 
-        {/* wtf is this id? HAHAHAHHAHAHA */}
         if (!newLine) {
             newLine = {
-                id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, // ID cursed by Tutankhamon in 1320 B.C.
                 type: 'line', 
                 points: [pos.x, pos.y, pos.x, pos.y],
-                color: (toolRef.current == 'highlighter') ? highlighterColor : brushColor,
+                color: (toolRef.current == 'highlighter') ? highlighterColor :  brushColor,
                 strokeWidth: (toolRef.current === 'highlighter') ? highlighterSize : strokeWidth,
                 opacity: (toolRef.current === 'highlighter') ? highlighterOpacity : 1,
                 globalCompositeOperation: 'source-over',
@@ -339,6 +445,7 @@ export default function Board({ shared = false }) {
                     activeCircleFillRef.current.opacity(newLine.opacity);
                     activeCircleFillRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
                     activeCircleFillRef.current.show();
+                    
                 } else {
                     activeCircleFillRef.current.hide();
                 }
@@ -445,7 +552,7 @@ export default function Board({ shared = false }) {
             }
         }
 
-        const padding = 20;
+        const padding = 100;
         console.log(minX, minY, maxX, maxY)
         return {
             x: minX - padding,
@@ -471,6 +578,8 @@ export default function Board({ shared = false }) {
         const box = getSmallestRectangle(lines);
         const layer = stageRef.current.findOne('.draw-layer');
         const bg = addTempBG(layer,box);
+        stageRef.current.position({ x: 0, y: 0 });
+        stageRef.current.scale({ x: 1, y: 1 });
         const dataUrl = layer.toDataURL({
             x: box.x,
             y: box.y,
@@ -492,6 +601,8 @@ export default function Board({ shared = false }) {
         const box = getSmallestRectangle(lines);
         const layer = stageRef.current.findOne('.draw-layer');
         const bg = addTempBG(layer,box);
+        stageRef.current.position({ x: 0, y: 0 });
+        stageRef.current.scale({ x: 1, y: 1 });
         const dataUrl = layer.toDataURL({
             x: box.x,
             y: box.y,
@@ -562,7 +673,7 @@ export default function Board({ shared = false }) {
             stagePositionRef.current = newPos;
             return;     // otherwise it starts drawing
         }
-
+        if (e.evt.pointerType === 'touch') return;
         if (!canDraw) return;
 
         if (eraserCursorRef.current) {
@@ -676,6 +787,12 @@ export default function Board({ shared = false }) {
 
         else if (!isCircle && activeLineRef.current) {
             activeLineRef.current.points([...activeLineDataRef.current.points]);
+        }
+
+        if (e.evt.pointerType === 'pen' && e.evt.pressure && toolRef.current !== 'shape') {
+            const baseWidth = activeLineDataRef.current.strokeWidth;
+            const dynamicWidth = baseWidth * (0.3 + e.evt.pressure * 0.7);
+            activeLineRef.current?.strokeWidth(dynamicWidth);
         }
         
         const layer = activeLineRef.current?.getLayer() || activeCircleStrokeRef.current?.getLayer();
@@ -958,6 +1075,7 @@ export default function Board({ shared = false }) {
                     onPointerDown={handlePointerDown}
                     onPointerMove={handlePointerMove}
                     onPointerUp={handlePointerUp}
+                    onPointerCancel={handlePointerUp}
                     onMouseEnter={handlePointerEnter} 
                     onMouseLeave={handlePointerLeave}
                     onWheel={handleWheel}
@@ -1099,7 +1217,10 @@ export default function Board({ shared = false }) {
 
             <div>
                 {canDraw && (
-                    <div className="absolute bottom-6 left-1/2 bg-white flex items-center gap-1 px-3 py-2 -translate-x-1/2 border border-gray-200 rounded-2xl backdrop-blur-md shadow-2xl">
+                    <div className="absolute bottom-6 left-1/2 bg-white flex items-center gap-1 px-3 py-2 
+                        -translate-x-1/2 border border-gray-200 rounded-2xl backdrop-blur-md shadow-2xl
+                        max-w-[95vw] overflow-x-clip overflow-y-visible"
+                    >
                         <ToolButton
                             active={tool === "pen"}
                             onClick={() => {
@@ -1119,7 +1240,7 @@ export default function Board({ shared = false }) {
                                 setSelectedShapeMenu(false);
                                 setSelectedHighlighterMenu(prev => !prev);
                             }}
-                            title="highlighter"
+                            title="Highlighter"
                         >
                             <Highlighter size={18} />
                         </ToolButton>
@@ -1158,8 +1279,20 @@ export default function Board({ shared = false }) {
                         </ToolButton>
 
                         <ToolButton
-                            active={tool === "shape"}
+                            active={tool === "select"}
                             onClick={() => {
+                                setTool("select");
+                                setSelectedShapeMenu(false);
+                                setSelectedHighlighterMenu(false);
+                            }}
+                            title="Select"
+                        >
+                            <LassoSelect size={18} />
+                        </ToolButton>
+
+                        <ToolButton
+                            active={tool === "shape"}
+                            onClick={() => {    
                                 setTool('shape');
                                 setSelectedShapeMenu(prev => !prev);
                                 setSelectedHighlighterMenu(false);
