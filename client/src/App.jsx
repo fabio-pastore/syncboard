@@ -6,7 +6,6 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
 
-
 export default function App() {
   const { user, loading } = useAuth();
   if (loading) return null; // or a loading spinner, but this is simpler

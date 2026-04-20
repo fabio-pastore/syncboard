@@ -9,6 +9,7 @@ export default function useSocket({ id, token, shared }) {
     const [lines, setLines] = useState([]);
     const [peers, setPeers] = useState(0);
     const [role, setRole] = useState('editor');
+    const [chatMessages, setChatMessages] = useState([]);
     const [error, setError] = useState("");
     const socketRef = useRef(null);
     const navigate = useNavigate();
@@ -88,6 +89,12 @@ export default function useSocket({ id, token, shared }) {
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));
             });
 
+            sock.on('chat:send', (message_data) => {
+                if (!message_data) return;
+                const { id, username, time, body } = message_data;
+                setChatMessages((prev) => [...prev, {type: "other", id: id, username: username, time: time, body: body}]);
+            });
+
             sock.on('error', (message) => {
                 console.error("Socket error:", message);
                 setError(message);
@@ -103,5 +110,5 @@ export default function useSocket({ id, token, shared }) {
         return () => { socketRef.current?.disconnect(); };
     }, [id, token, shared]);
 
-    return { board, setBoard, lines, setLines, peers, role, setRole, error, setError, socketRef };
+    return { board, setBoard, lines, setLines, peers, role, setRole, error, setError, socketRef, chatMessages, setChatMessages };
 }

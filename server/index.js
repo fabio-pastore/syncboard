@@ -150,17 +150,24 @@ io.on('connection', (socket) => {
     });
 
     socket.on('board:draw:redo', async ({ lineId, op, line }) => {
-    const roomId = socket.data.boardId;
-    if (!roomId || socket.data.role !== 'editor') return;
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
 
-    if (op === 'draw') {
-        socket.to(roomId).emit('board:draw:redo', { lineId, op, line });
-        await Board.updateOne({ _id: roomId }, { $push: { content: line } }); 
-    } else {
-        socket.to(roomId).emit('board:draw:redo', { lineId, op }); 
-        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } }); 
-    }
-});
+        if (op === 'draw') {
+            socket.to(roomId).emit('board:draw:redo', { lineId, op, line });
+            await Board.updateOne({ _id: roomId }, { $push: { content: line } }); 
+        } else {
+            socket.to(roomId).emit('board:draw:redo', { lineId, op }); 
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } }); 
+        }
+    });
+
+    socket.on('chat:send', async ({id, username, time, body}) => {
+        const roomId = socket.data.boardId;
+        if (!roomId) return;
+        socket.to(roomId).emit('chat:send', {id: id, username: username, time: time, body: body});
+    });
+
     socket.on('disconnect', () => {
         const roomId = socket.data.boardId;
         if (!roomId) return;
@@ -186,4 +193,5 @@ io.on('connection', (socket) => {
         const peers = io.sockets.adapter.rooms.get(roomId)?.size || 0;
         io.to(roomId).emit('board:peers', peers);
     });
+
 })
