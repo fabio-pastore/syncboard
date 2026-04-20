@@ -119,6 +119,7 @@ io.on('connection', (socket) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:line', line);
+        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: line.id } } });
         await Board.updateOne({ _id: roomId }, { $push: { content: line } });
     });
 

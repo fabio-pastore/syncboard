@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
-import { Stage, Layer, Line, Circle } from "react-konva";
+import { Stage, Layer, Line, Circle, Rect } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, MessageCircle, Users, Share2 } from "lucide-react";
 
 import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN } from "../utils/boardConstants";
-import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData } from "../utils/boardUtils";
+import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, lineIntersectsOrInsidePolygon, computeSelectionBBox, translatePoints} from "../utils/boardUtils";
 import useSocket from "../hooks/useSocket";
 import useExport from "../hooks/useExport";
 import useTouchHandlers from "../hooks/useTouchHandlers";
@@ -37,6 +37,13 @@ export default function Board({ shared = false }) {
     const [showShareModal, setShowShareModal] = useState(false);
     const [lastUpdate, setLastUpdate] = useState(0);
 
+    const LASSO_LINE_COLOR = "#959494"
+    const SELECTION_BOX_COLOR = "#3b82f6"
+    const [selectedIds, setSelectedIds] = useState([]);
+    const [selectionLasso, setSelectionLasso] = useState(null);
+    const [selectionBBox, setSelectionBBox] = useState(null); // BB = bounding box
+    const [isDraggingSelection, setIsDraggingSelection] = useState(false);
+
     const stageRef = useRef(null);
     const toolRef = useRef(tool);
     const shapeRef = useRef(shape);
@@ -54,11 +61,36 @@ export default function Board({ shared = false }) {
     const pointerTypeRef = useRef('mouse');
     const isPenActiveRef = useRef(false);
 
+    const selectionLassoRef = useRef(null);
+    const dragStartRef = useRef(null);
+
+    const selectedIdsRef = useRef([]);
+    const selectionLassoDataRef = useRef(null);
+    const selectionBBoxRef = useRef(null);
+    const isDraggingSelectionRef = useRef(false);
+    useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
+    useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
+    useEffect(() => {selectionBBoxRef.current = selectionBBox}, [selectionBBox]);
+    useEffect(() => {isDraggingSelectionRef.current = isDraggingSelection}, [isDraggingSelection]);
+
     const { board, setBoard, lines, setLines, peers, role, error, socketRef } = useSocket({ id, token, shared });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
     useEffect(() => { shapeRef.current = shape }, [shape]);
+    useEffect(() => {
+    const onKeyDown = (e) => {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
+            selectedIds.forEach(id => {
+                socketRef.current?.emit('board:draw:erase', id);
+            });
+            setLines(prev => prev.filter(l => !selectedIds.includes(l.id)));
+            clearSelection();
+        }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+}, [selectedIds]);
 
     const { touchCountRef } = useTouchHandlers({
         stageRef, setScale,
@@ -89,6 +121,22 @@ export default function Board({ shared = false }) {
             }
         }
     }, [eraserSize, tool]);
+
+    const clearSelection = useCallback(() => {
+        setSelectedIds([]);
+        setSelectionLasso(null);
+        setSelectionBBox(null);
+        setIsDraggingSelection(false);
+        if (selectionLassoRef.current) {
+            selectionLassoRef.current.hide();
+            selectionLassoRef.current.getLayer().batchDraw();
+        }
+    }, []);
+
+    useEffect(() => {
+        toolRef.current = tool;
+        if (tool !== 'select') clearSelection();
+    }, [tool]);
 
     const handlePointerDown = useCallback((e) => {
         if (isPanningRef.current) return;
@@ -159,6 +207,38 @@ export default function Board({ shared = false }) {
             }
             return;
         }
+        
+        if (toolRef.current === 'select') {
+
+            if (selectionBBoxRef.current) {
+                const pos = {
+                    x: (pointerPos.x - stage.x()) / pointerScale,
+                    y: (pointerPos.y - stage.y()) / pointerScale,
+                }
+                if (pos.x >= selectionBBoxRef.current.x && pos.x <= selectionBBoxRef.current.x + selectionBBoxRef.current.width &&
+                    pos.y >= selectionBBoxRef.current.y && pos.y <= selectionBBoxRef.current.y + selectionBBoxRef.current.height) {
+                        setIsDraggingSelection(true);
+                        isDraggingSelectionRef.current = true;
+                        dragStartRef.current = { x: pos.x, y: pos.y };
+                        return;
+                    }
+            }
+
+            clearSelection();
+            isDrawingRef.current = true;
+            const pos = { 
+                x: (pointerPos.x - stage.x()) / pointerScale,
+                y: (pointerPos.y - stage.y()) / pointerScale,
+            }
+            // setSelectionBBox([pos.x, pos.y]);
+            setSelectionLasso([pos.x, pos.y]);
+            if (selectionLassoRef.current) {
+                selectionLassoRef.current.points([pos.x, pos.y]);
+                selectionLassoRef.current.show();
+                selectionLassoRef.current.getLayer().batchDraw();
+            }
+            return;
+        }
 
         const pos = {
             x: (pointerPos.x - stage.x()) / pointerScale,
@@ -178,7 +258,7 @@ export default function Board({ shared = false }) {
                 tension: 0.3,
                 fill: '',
                 lineCap: 'round',
-                lineJoin: 'round'
+                lineJoin: 'round',
             };
         }
 
@@ -276,6 +356,44 @@ export default function Board({ shared = false }) {
             return;
         }
 
+        if (toolRef.current === 'select') {
+            if (isDraggingSelectionRef.current && dragStartRef.current) {
+                const pos = {
+                    x: (pointerPos.x - stage.x()) / pointerScale,
+                    y: (pointerPos.y - stage.y()) / pointerScale,
+                }
+                const dx = pos.x - dragStartRef.current.x;
+                const dy = pos.y - dragStartRef.current.y;
+                dragStartRef.current = { x: pos.x, y: pos.y };
+
+                setLines(prev => {
+                    const updated = prev.map(l => {
+                        if (!selectedIdsRef.current.includes(l.id)) return l;
+                        return {...l, points: translatePoints(l.points, dx, dy)};
+                    });
+                    linesRef.current = updated;
+                    return updated;
+                });
+                setSelectionBBox(prev => prev ? {...prev, x: prev.x + dx, y: prev.y + dy } : null);
+                return;
+            }
+            if (!isDrawingRef.current) return;
+            const pos = {
+                x: (pointerPos.x - stage.x()) / pointerScale,
+                y: (pointerPos.y - stage.y()) / pointerScale,
+            };
+
+            setSelectionLasso(prev => {
+                const u = prev ? [...prev, pos.x, pos.y] : [pos.x, pos.y];
+                if (selectionLassoRef.current) {
+                    selectionLassoRef.current.points(u);
+                    selectionLassoRef.current.getLayer().batchDraw();
+                }
+                return u;
+            })
+            return;
+        }
+
         if (!activeLineDataRef.current) return;
 
         const pos = {
@@ -357,6 +475,36 @@ export default function Board({ shared = false }) {
         isDrawingRef.current = false;
         if (toolRef.current === 'eraser') return;
 
+        if (toolRef.current === 'select') {
+            if (isDraggingSelectionRef.current) {
+                setIsDraggingSelection(false);
+                isDraggingSelectionRef.current = false;
+                dragStartRef.current = null;
+                // socket
+                selectedIdsRef.current.forEach(id => {
+                  socketRef.current?.emit('board:draw:line', linesRef.current?.find(l => l.id === id));  
+                });
+                return;
+            }
+
+            isDrawingRef.current = false;
+            if (!selectionLassoDataRef.current || selectionLassoDataRef.current.length < 6) { // why six?  SEEEVEEEEEEEEN 
+                clearSelection();
+                return;
+            }
+            
+            const lasso = selectionLassoDataRef.current;
+            const selected = linesRef.current.filter(l => lineIntersectsOrInsidePolygon(l, lasso));
+            const selectedIds = selected.map(l => l.id);
+            setSelectedIds(selectedIds);
+            if (selectedIds.length > 0) setSelectionBBox(computeSelectionBBox(selected));
+            if (selectionLassoRef.current) {
+                selectionLassoRef.current.hide();
+                selectionLassoRef.current.getLayer().batchDraw();
+            }
+            return;
+        }
+
         const finishedLine = activeLineDataRef.current;
         if (!finishedLine) return;
 
@@ -370,9 +518,10 @@ export default function Board({ shared = false }) {
             finishedLine.globalCompositeOperation = 'multiply';
             delete finishedLine.useMultiply;
         }
-
+        
         setLines((prev) => [...prev, finishedLine]);
         linesRef.current = [...(linesRef.current || []), finishedLine];
+       
 
         if (activeLineRef.current) {
             activeLineRef.current.hide();
@@ -413,7 +562,7 @@ export default function Board({ shared = false }) {
         const stage = stageRef.current;
 
         if (e.evt.ctrlKey || e.evt.metaKey) {
-            const scaleBy = 1.05;
+            const scaleBy = 1.10;
             const oldScale = stage.scaleX();
             const pointer = stage.getPointerPosition();
             const mousePointTo = {
@@ -509,7 +658,7 @@ export default function Board({ shared = false }) {
                 onMouseLeave={handlePointerLeave}
                 onWheel={handleWheel}
                 style={{
-                    cursor: tool === 'eraser' ? 'none' : (canDraw ? 'crosshair' : 'default'),
+                    cursor: (tool === 'eraser') ? 'none' : (tool === 'select') ? 'default' : (canDraw ?   'crosshair' : 'default'),
                     display: 'block',
                     touchAction: 'none'
                 }}
@@ -562,6 +711,7 @@ export default function Board({ shared = false }) {
                                 closed={line.closed}
                                 lineCap={line.lineCap}
                                 lineJoin={line.lineJoin}
+                                dash={line.dash}
                                 listening={true}
                             />
                         );
@@ -572,6 +722,7 @@ export default function Board({ shared = false }) {
                         tension={0.3}
                         lineCap="round"
                         lineJoin="round"
+                        dash={activeLineRef.dash}
                         listening={false}
                         visible={false}
                     />
@@ -587,6 +738,48 @@ export default function Board({ shared = false }) {
                         visible={false}
                         listening={false}
                     />
+
+                    <Line
+                        ref={selectionLassoRef}
+                        stroke="#3b82f6"
+                        strokeWidth={1.5}
+                        dash={[8, 4]}
+                        closed={true}
+                        listening={false}
+                        visible={false}
+                        opacity={0.7}
+                    />
+                    {selectionBBox && (
+                        <>
+                            <Rect
+                                x={selectionBBox.x}
+                                y={selectionBBox.y}
+                                width={selectionBBox.width}
+                                height={selectionBBox.height}
+                                stroke={SELECTION_BOX_COLOR}
+                                strokeWidth={1.5}
+                                dash={[6, 3]}
+                                listening={false}
+                                fill="rgba(59, 130, 246, 0.05)"
+                            />
+                        </>
+                    )   
+                    }
+
+                    {selectedIds.length > 0 && lines.filter(l => selectedIds.includes(l.id)).map(l=>(
+                        <Line
+                            key={`sel_${l.id}`}
+                            points={l.points}
+                            stroke="#3b82f6"
+                            strokeWidth={(l.strokeWidth || 3) + 4}
+                            opacity={0.25}
+                            tension={l.tension}
+                            closed={l.closed}
+                            lineCap={l.lineCap}
+                            lineJoin={l.lineJoin}
+                            listening={false}
+                        />
+                    ))}
                 </Layer>
             </Stage>
 
