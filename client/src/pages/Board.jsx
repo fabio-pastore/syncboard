@@ -860,7 +860,7 @@ export default function Board({ shared = false }) {
 
             <div 
                 className={`
-                    fixed bottom-6 right-2 z-20 flex flex-col w-80 md:w-96 h-[92vh] 
+                    fixed bottom-6 right-2 z-20 flex flex-col w-80 md:w-96 h-[92vh]
                     bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden font-sans
                     transition-all duration-300 ease-in-out origin-bottom-right 
                     ${chatOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}                                                                                                                              
@@ -877,7 +877,7 @@ export default function Board({ shared = false }) {
                     </button>
                 </div>
 
-                <div className="flex-1 p-4 overflow-y-auto bg-gray-50 space-y-4">
+                <div className="flex-1 p-4 overflow-y-auto bg-gray-50 space-y-4 min-w-0 break-words overflow-x-hidden">
 
                     < div className="mx-auto max-w-[90%] bg-gray-200 text-gray-600 font-semibold text-xs text-center px-4 py-2.5 rounded-xl mb-4">
                     Welcome to this board's chat room!<br />
@@ -888,7 +888,7 @@ export default function Board({ shared = false }) {
                         chatMessages.map((msg) => {
                             if (msg.type === 'own') {
                                 return (
-                                    <div key={msg.id} className="animate-message flex flex-col w-fit max-w-[85%] ml-auto space-y-1">
+                                    <div key={msg.id} className="animate-message flex flex-col w-fit max-w-[85%] min-w-0 break-words ml-auto space-y-1">
                                         <SentMessage
                                             username={"you"}
                                             time={msg.time}
@@ -898,7 +898,7 @@ export default function Board({ shared = false }) {
                                 );
                             }
                             else return (
-                                <div key={msg.id} className="animate-message flex flex-col w-fit max-w-[85%] space-y-1">
+                                <div key={msg.id} className="animate-message flex flex-col w-fit max-w-[85%] min-w-0 break-words space-y-1">
                                     <ReceivedMessage
                                         username={msg.username}
                                         time={msg.time}
@@ -971,14 +971,14 @@ export default function Board({ shared = false }) {
 
 function SentMessage({time, body}) {
     return (
-    <div className="flex flex-col w-fit max-w-[85%] ml-auto space-y-1">
+    <div className="flex flex-col w-full min-w-0 space-y-1">
         <div className="flex items-baseline justify-between space-x-2 px-1 w-full">
             <span className="text-xs font-medium text-purple-600">You</span>
             <span className="text-xs text-gray-400">{time}</span>
         </div>
 
-        <div className="bg-purple-100 border border-purple-200 p-3 rounded-2xl rounded-tr-sm text-sm text-purple-900 shadow-sm">
-            <span>{body}</span>
+        <div className="bg-purple-100 border border-purple-200 p-3 rounded-2xl rounded-tr-sm text-sm text-purple-900 shadow-sm w-fit max-w-full break-words whitespace-pre-wrap">
+            {body}
         </div>
     </div>
     )
@@ -986,15 +986,15 @@ function SentMessage({time, body}) {
 
 function ReceivedMessage({username, time, body}) {
     return (
-        <div className="flex flex-col w-fit max-w-[85%] space-y-1">
+        <div className="flex flex-col w-full min-w-0 space-y-1">
 
             <div className="flex items-baseline justify-between px-1 w-full space-x-2">
                 <span className="text-xs font-medium text-gray-600">{username}</span>
                 <span className="text-xs text-gray-400">{time}</span>
             </div>
 
-            <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-tl-sm text-sm text-gray-700 shadow-sm">
-                <span>{body}</span>
+            <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-tl-sm text-sm text-gray-700 shadow-sm w-fit max-w-full break-words whitespace-pre-wrap">
+                {body}
             </div>
         </div>
     )
