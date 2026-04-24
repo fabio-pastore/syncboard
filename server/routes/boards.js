@@ -68,6 +68,7 @@ router.get('/:id', async (req, res) => {
         res.json(board);
     }
     catch (err) {
+        console.error('GET /boards/:id error:', err);
         res.status(500).json({ error: 'Server rror'});
     }
 });
@@ -76,6 +77,12 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const {name, folder} = req.body;
+
+        if (folder) {
+            const f = require('../models/Folder');
+            const tf = await f.findOne({_id: folder, owner: req.userId});
+            if (!tf) return res.status(405).json({ error: 'Folder not folder' });
+        }
         const board = await Board.findOneAndUpdate(
             {_id: req.params.id, owner: req.userId},
             { ...(name && { name }), ...(folder !== undefined && { folder })},
@@ -84,6 +91,7 @@ router.put('/:id', async (req, res) => {
         if (!board) return res.status(404).json({ error: 'Board not found'});
         res.json(board);
     } catch (err) {
+        console.error('PUT /boards/:id error:', err);
         res.status(500).json({error: 'Server error'});
     }
 })

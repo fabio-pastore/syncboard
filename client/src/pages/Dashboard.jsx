@@ -20,6 +20,9 @@ export default function Dashboard() {
     const [editName, setEditName] = useState('');
     const [error, setError] = useState('');
 
+    const [draggedItem, setDraggedItem] = useState(null);
+    const [draggedOverFolder, setDraggedOverFolder] = useState(null);
+
     useEffect(() => { loadContents();}, [currentFolder]);
 
     async function loadContents() {
@@ -50,16 +53,37 @@ export default function Dashboard() {
         }
     }
 
+    async function moveItem(tfid) {
+        if (!draggedItem) return;
+        if (draggedItem.type === 'folder' && draggedItem.id === tfid) return;
+
+        try {
+            const endpoint = (draggedItem.type === 'board')
+                            ? `/boards/${draggedItem.id}`
+                            : `/folders/${draggedItem.id}`;
+            const body = draggedItem.type === 'board'
+                        ? { folder: tfid }
+                        : { parent: tfid };
+            await apiFetch(endpoint, { method: 'PUT', body: JSON.stringify(body)});
+            loadContents();
+        } catch (err) {
+            setError(err.error || "Failed to move item");
+        } finally {
+            setDraggedItem(null);
+            setDraggedOverFolder(null);
+        }
+    }
+
     function openFolder(folder) {
-        setFolderPath((prev) => [...prev, { id: currentFolder, name: folder.name }]);
+        setFolderPath((prev) => [...prev, { id: folder._id, parentId: currentFolder, name: folder.name }]);
         setCurrentFolder(folder._id);
     }
 
     function goBack() {
         const prev = [...folderPath]
-        const parent = prev.pop();
+        const current = prev.pop();
         setFolderPath(prev);
-        setCurrentFolder(parent?.id || null)
+        setCurrentFolder(current?.parentId || null)
     }
 
     function goHome() {
@@ -159,11 +183,20 @@ export default function Dashboard() {
                     <button
                         onClick={goHome}
                         className="text-violet-600 hover:text-violet-700 hover:underline cursor-pointer font-medium"
+                        onDragOver={(e) => {e.preventDefault(); setDraggedOverFolder(null);}}
+                        onDragLeave={() => setDraggedOverFolder(null)}
+                        onDrop={(e) => {e.preventDefault(); moveItem(null);}}
                     >
                         Home
                     </button>
                     {folderPath.map((f, i) => (
-                        <span key={i} className="flex items-center gap-1">
+                        <span
+                            key={i}
+                            className="flex items-center gap-1"
+                            onDragOver={(e) => {e.preventDefault(); setDraggedOverFolder(f.id);}}
+                            onDragLeave={() => setDraggedOverFolder(null)}
+                            onDrop={(e) => {e.preventDefault(); moveItem(f.id);}}
+                        >
                             <span className="text-gray-300">/</span>
                             <span className="text-gray-500">{f.name}</span>
                         </span>
@@ -221,7 +254,19 @@ export default function Dashboard() {
                             {folders.map((folder) => (
                                 <div
                                     key={folder._id}
-                                    className="group relative bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition cursor-pointer"
+                                    className={`
+                                        group relative bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition cursor-pointer
+                                        ${(draggedOverFolder === folder._id) && (draggedItem?.id !== folder._id) 
+                                            ? 'border-violet-400 bg-violet-50 shadow-sm ring-2 ring-violet-200' 
+                                            : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                                        }
+                                    `}
+                                    draggable
+                                    onDragStart={() => setDraggedItem({ type: 'folder', id: folder._id })}
+                                    onDragEnd={() => {setDraggedItem(null); setDraggedOverFolder(null);}}
+                                    onDragOver={(e) => {e.preventDefault(); setDraggedOverFolder(folder._id)}}
+                                    onDragLeave={() => setDraggedOverFolder(null)}
+                                    onDrop={(e) => {e.preventDefault(); moveItem(folder._id)}}
                                 >
                                     {editingFolder === folder._id ? (
                                         <form
@@ -312,6 +357,9 @@ export default function Dashboard() {
                                     key={board._id}
                                     className="group relative bg-white border border-gray-200 rounded-xl overflow-hidden hover:border-violet-400 hover:shadow-sm transition cursor-pointer"
                                     onClick={() => navigate(`/board/${board._id}`)}
+                                    draggable
+                                    onDragStart={(e) => { e.stopPropagation(); setDraggedItem({ type: 'board', id: board._id }); }}
+                                    onDragEnd={() => {setDraggedItem(null); setDraggedOverFolder(null);}}
                                 >
                                     {editingBoard === board._id ? (
                                         <div className="p-4">

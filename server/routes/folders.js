@@ -45,6 +45,7 @@ router.post('/', async (req, res) => {
     });
     res.status(201).json(folder);
   } catch (err) {
+    console.error('POST /folders error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -53,16 +54,28 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     const { name, parent } = req.body;
+
+    if (parent) {
+      let check = await Folder.findById(parent);
+      while (check) {
+        if (check._id.toString() === req.params.id) {
+          return res.status(400).json({ error: 'Cannot move folder inside its own subfolder' });
+        }
+        check = check.parent ? await Folder.findById(check.parent) : null;
+      }
+    }
+
     const folder = await Folder.findOneAndUpdate(
       { _id: req.params.id, owner: req.userId },
       { ...(name && { name }), ...(parent !== undefined && { parent }) },
       { new: true }
     );
     if (!folder) return res.status(404).json({ error: 'Folder not found' });
-    res.json(folder);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
+      res.json(folder);
+    } catch (err) {
+      console.error('PUT /folders/:id error:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
 });
 
 async function deleteFolderRecursive(folderId, ownerId) {
