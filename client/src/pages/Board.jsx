@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import { Stage, Layer, Line, Circle, Rect } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, MessageCircle, Users, Share2, X, Send } from "lucide-react";
+import { ArrowLeft, MessageCircle, Users, Share2, X, Send, User } from "lucide-react";
 import { useAuth } from '../context/AuthContext';
 
 import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN } from "../utils/boardConstants";
@@ -81,7 +81,9 @@ export default function Board({ shared = false }) {
     const messagesEndRef = useRef(null);
     useEffect(() => {inputMessageRef.current = inputMessage}, [inputMessage]);
 
-    const { board, setBoard, lines, setLines, peers, role, error, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared });
+    const [showPeers, setShowPeers] = useState(false);
+
+    const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, role, error, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
@@ -835,24 +837,60 @@ export default function Board({ shared = false }) {
             </div>
 
             <div className="fixed top-2 right-2 flex items-center gap-2 pointer-events-auto z-10">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-500 shadow-sm">
-                    <Users size={14} />
-                    <span>{peers}</span>
-                </div>
-                {!shared && (
-                    <button onClick={() => setShowShareModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer"
+    
+                <div className="relative flex flex-col items-end">
+                    
+                    <button 
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer focus:outline-none"
+                        onClick={() => setShowPeers((prev) => !prev)}
                     >
-                        <Share2 size={14} />
-                        Share
+                        <Users size={14} />
+                        <span>{peers}</span> 
                     </button>
-                )}
+
+                    <div 
+                        className={`
+                            absolute top-full right-0 mt-2 p-2 min-w-[180px]
+                            bg-white border border-gray-100 rounded-xl shadow-lg
+                            flex flex-col gap-1 text-sm text-gray-700 max-h-64
+                            transition-all duration-200 origin-top-right z-10 overflow-y-auto
+                            overscroll-contain
+                            ${showPeers 
+                                ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' 
+                                : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
+                            }
+                        `}
+                    >
+                        <div className="px-2 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                            Connected users
+                        </div>
+                        
+                            {peerEntries.map((peer) => (
+                                <div 
+                                    key={peer + `${Date.now()}_${Math.random().toString(36).slice(2)}`} 
+                                    className="px-0 py-0.5 rounded-lg hover:bg-gray-50 transition-colors"
+                                >
+                                    <UserEntry username={(peer === user.username) ? peer + " (You)" : peer} />
+                                </div>
+                            ))}
+
+                        </div>
+                    </div>
+
+                    {!shared && (
+                        <button onClick={() => setShowShareModal(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer"
+                        >
+                            <Share2 size={14} />
+                            Share
+                        </button>
+                    )}
             </div>
 
             <div className="fixed bottom-7.5 right-4 flex items-center gap-2 pointer-events-auto z-10">
                 <button
                     onClick={() => setChatOpen((prev) => !prev)} 
-                    className="py-2 px-8 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900"
+                    className="py-2 px-4 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900"
                 >
                     <MessageCircle size={18} />
                 </button>
@@ -996,6 +1034,14 @@ function ReceivedMessage({username, time, body}) {
             <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-tl-sm text-sm text-gray-700 shadow-sm w-fit max-w-full break-words whitespace-pre-wrap">
                 {body}
             </div>
+        </div>
+    )
+}
+
+function UserEntry({username}) {
+    return (
+        <div className='px-2'>
+            <User className='inline' size={16} /> {username}
         </div>
     )
 }

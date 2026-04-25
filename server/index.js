@@ -21,6 +21,7 @@ const io = new Server(server, {
 });
 
 const Board = require('./models/Board');
+const User = require('./models/Users');
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
@@ -47,14 +48,6 @@ app.get('/api/boards/share/:token', authMiddleware, async (req, res) => {
 app.use('/api/boards', boardRoutes);
 
 app.use('/api/folders', folderRoutes);
-
-app.get('/api/test', authMiddleware, async (req, res) => {
-    const User = require('./models/Users');
-    const user = await User.findById(req.userId).select('-passwordHash');
-    res.status(200).json({ msg: "Authenticated request successful", user });
-});
-
-
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
@@ -106,10 +99,17 @@ io.on('connection', (socket) => {
             socket.data.userId = userId;
             socket.data.isShareToken = !!shareToken;
             socket.data.isOwner = !shareToken && !!userId && board.owner.toString() === userId;
+            const joinedUser = await User.findById(userId).select('username');
+            if (!joinedUser) return socket.emit('error', 'User not found');
+            socket.data.username = joinedUser.username;
 
-            const peers = io.sockets.adapter.rooms.get(roomId)?.size || 1;
-            socket.emit('board:load', { lines: board.content, peers, role });
-            io.to(roomId).emit('board:peers', peers);
+            const peerCount = io.sockets.adapter.rooms.get(roomId)?.size || 1;
+            const sockets = await io.in(roomId).fetchSockets();
+            const connectedPeers = sockets.map((sock) => sock.data.username);
+
+            socket.emit('board:load', { lines: board.content, count: peerCount, connectedPeers: connectedPeers, role: role });
+            io.to(roomId).emit('board:peers', {count: peerCount, connectedPeers: connectedPeers});
+            
         } catch (err) {
             return socket.emit('error', 'Failed to join board');
         }
@@ -168,7 +168,7 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('chat:send', {id: id, username: username, time: time, body: body});
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         const roomId = socket.data.boardId;
         if (!roomId) return;
 
@@ -190,8 +190,11 @@ io.on('connection', (socket) => {
             Board.updateOne({ _id: roomId }, { $pull: { shareTokens: { token: shareToken } } }).catch(() => {});
         }
 
-        const peers = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-        io.to(roomId).emit('board:peers', peers);
+        const peerCount = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+        const sockets = await io.in(roomId).fetchSockets();
+        const connectedPeers = sockets.map((sock) => sock.data.username);
+
+        io.to(roomId).emit('board:peers', {count: peerCount, connectedPeers: connectedPeers});
     });
 
 })

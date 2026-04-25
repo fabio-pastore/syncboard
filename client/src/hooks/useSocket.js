@@ -8,6 +8,7 @@ export default function useSocket({ id, token, shared }) {
     const [board, setBoard] = useState(null);
     const [lines, setLines] = useState([]);
     const [peers, setPeers] = useState(0);
+    const [peerEntries, setPeerEntries] = useState([]);
     const [role, setRole] = useState('editor');
     const [chatMessages, setChatMessages] = useState([]);
     const [error, setError] = useState("");
@@ -50,13 +51,17 @@ export default function useSocket({ id, token, shared }) {
                 sock.emit('board:join', { boardId: shared ? token : id });
             });
 
-            sock.on('board:load', ({ lines: l, peers: p, role: r }) => {
+            sock.on('board:load', ({ lines: l, count: c, connectedPeers: peers, role: r }) => {
                 setLines(l);
-                setPeers(p);
+                setPeers(c);
+                setPeerEntries(peers);
                 if (r) setRole(r);
             });
 
-            sock.on('board:peers', (count) => setPeers(count));
+            sock.on('board:peers', ({count: c, connectedPeers: peers}) => {
+                setPeers(c);
+                setPeerEntries(peers);
+            });
 
             sock.on('board:draw:line', (line) => {
                 setLines((prev) => {
@@ -110,5 +115,5 @@ export default function useSocket({ id, token, shared }) {
         return () => { socketRef.current?.disconnect(); };
     }, [id, token, shared]);
 
-    return { board, setBoard, lines, setLines, peers, role, setRole, error, setError, socketRef, chatMessages, setChatMessages };
+    return { board, setBoard, lines, setLines, peers, peerEntries, role, setRole, error, setError, socketRef, chatMessages, setChatMessages };
 }
