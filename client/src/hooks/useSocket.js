@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import { apiFetch } from "../api";
 import { SOCKET_URL } from "../utils/boardConstants";
 
-export default function useSocket({ id, token, shared }) {
+export default function useSocket({ id, token, shared, onShapeUpdate }) {
     const [board, setBoard] = useState(null);
     const [lines, setLines] = useState([]);
     const [peers, setPeers] = useState(0);
@@ -74,10 +74,12 @@ export default function useSocket({ id, token, shared }) {
                     }
                     else return [...prev, line];
                 });
+                onShapeUpdate(line.id); // if updated line in any of currently selected lines, clear the selection to avoid display of outdated selectionBBox 
             });
 
             sock.on('board:draw:erase', (lineId) => {
                 setLines((prev) => prev.filter((l) => l.id !== lineId));
+                onShapeUpdate(line.id); // same as above
             });
 
             sock.on('board:draw:undo', (data_payload) => {
@@ -85,6 +87,7 @@ export default function useSocket({ id, token, shared }) {
                 const { lineId, op, line } = data_payload;
                 if (op === 'draw') setLines((prev) => prev.filter((l) => l.id !== lineId));
                 else setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
+                onShapeUpdate(lineId); // same as above
             });
 
             sock.on('board:draw:redo', (data_payload) => {

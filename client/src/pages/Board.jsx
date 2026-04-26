@@ -89,7 +89,26 @@ export default function Board({ shared = false }) {
 
     const [showPeers, setShowPeers] = useState(false);
 
-    const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, role, error, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared });
+    const clearSelection = useCallback(() => {
+        setSelectedIds([]);
+        setSelectionLasso(null);
+        setSelectionBBox(null);
+        setSelectionBBoxRotation(0);
+        setIsDraggingSelection(false);
+        if (selectionLassoRef.current) {
+            selectionLassoRef.current.hide();
+            selectionLassoRef.current.getLayer().batchDraw();
+        }
+    }, []);
+
+    const handleOtherClientEdit = useCallback((shapeId) => {
+    if (selectedIdsRef.current.includes(shapeId)) {
+        clearSelection();
+    }
+}, [clearSelection]);
+
+    const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, 
+            role, error, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
@@ -137,18 +156,6 @@ export default function Board({ shared = false }) {
             }
         }
     }, [eraserSize, tool]);
-
-    const clearSelection = useCallback(() => {
-        setSelectedIds([]);
-        setSelectionLasso(null);
-        setSelectionBBox(null);
-        setSelectionBBoxRotation(0);
-        setIsDraggingSelection(false);
-        if (selectionLassoRef.current) {
-            selectionLassoRef.current.hide();
-            selectionLassoRef.current.getLayer().batchDraw();
-        }
-    }, []);
 
     useEffect(() => {
         toolRef.current = tool;
@@ -682,7 +689,7 @@ export default function Board({ shared = false }) {
         messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" });
     };
 
-    const handleRotationStart = (e) => {          
+    const handleRotationStart = (e) => {        
         const centerX = selectionBBox.x + selectionBBox.width / 2;
         const centerY = selectionBBox.y + selectionBBox.height / 2;
         const stage = e.target.getStage();
@@ -696,7 +703,7 @@ export default function Board({ shared = false }) {
         
         const initialData = {};
         linesRef.current.forEach(l => {
-            if (selectedIds.includes(l.id)) {
+            if (selectedIdsRef.current.includes(l.id)) {
                 initialData[l.id] = {
                     rotation: l.rotation || 0,
                     x: l.x !== undefined ? l.x : centerX,
@@ -709,14 +716,14 @@ export default function Board({ shared = false }) {
         initialLinesRotRef.current = initialData;
     }
 
-    const handleRotationDrag = (e) => {                  
+    const handleRotationDrag = (e) => {                 
         const centerX = selectionBBox.x + selectionBBox.width / 2;
         const centerY = selectionBBox.y + selectionBBox.height / 2;
         const stage = e.target.getStage();
         const pointerPos = stage.getPointerPosition();
         
         const currentAngle = Math.atan2(pointerPos.y - centerY, pointerPos.x - centerX) * (180 / Math.PI);
-        
+
         let frameDelta = currentAngle - lastAngleRef.current;
 
         if (frameDelta > 180) frameDelta -= 360;
@@ -735,7 +742,7 @@ export default function Board({ shared = false }) {
         const sin = Math.sin(rad);
         
         setLines(prev => prev.map(l => {
-            if (selectedIds.includes(l.id)) {
+            if (selectedIdsRef.current.includes(l.id)) {
                 const init = initialLinesRotRef.current[l.id];
 
                 const dx = init.x - centerX;
@@ -757,10 +764,59 @@ export default function Board({ shared = false }) {
         }));
     }
 
-    const handleRotationEnd = (e) => {
-        // socket emit change
-        return;
-    }
+    const handleRotationEnd = useCallback((e) => {
+        if (!selectionBBoxRef.current) return;
+    
+        const currentBBox = selectionBBoxRef.current;
+        const centerX = currentBBox.x + currentBBox.width / 2;
+        const centerY = currentBBox.y + currentBBox.height / 2;
+
+        const updatedLines = linesRef.current.map(l => {
+            if (!selectedIdsRef.current.includes(l.id)) return l;
+            if (!l.rotation) return l; 
+
+            const angleRad = (l.rotation * Math.PI) / 180;
+            const cos = Math.cos(angleRad);
+            const sin = Math.sin(angleRad);
+
+            const originX = l.offsetX !== undefined ? l.offsetX : centerX;
+            const originY = l.offsetY !== undefined ? l.offsetY : centerY;
+            const posX = l.x !== undefined ? l.x : centerX;
+            const posY = l.y !== undefined ? l.y : centerY;
+
+            const newPoints = [];
+            for (let i = 0; i < l.points.length; i += 2) {
+                const px = l.points[i];
+                const py = l.points[i + 1];
+
+                const dx = px - originX;
+                const dy = py - originY;
+
+                const rx = posX + (dx * cos - dy * sin);
+                const ry = posY + (dx * sin + dy * cos);
+
+                newPoints.push(rx, ry);
+            }
+
+            return { 
+                ...l, 
+                points: newPoints,
+                rotation: 0,
+                x: 0,
+                y: 0,
+                offsetX: 0,
+                offsetY: 0
+            };
+        });
+
+        setLines(updatedLines);
+        linesRef.current = updatedLines;
+
+        selectedIdsRef.current.forEach(id => {
+                socketRef.current?.emit('board:draw:line', linesRef.current?.find(l => l.id === id));  
+            });
+
+    }, []);
 
     return (
         <div className="h-screen overflow-hidden relative bg-white" style={{ height: '100dvh' }} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}>
