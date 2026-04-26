@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
-import { Stage, Layer, Line, Circle, Rect } from "react-konva";
+import { Stage, Layer, Line, Circle, Rect, Text, Group } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, MessageCircle, Users, Share2, X, Send, User } from "lucide-react";
 import { useAuth } from '../context/AuthContext';
@@ -44,6 +44,7 @@ export default function Board({ shared = false }) {
     const [selectedIds, setSelectedIds] = useState([]);
     const [selectionLasso, setSelectionLasso] = useState(null);
     const [selectionBBox, setSelectionBBox] = useState(null); // BB = bounding box
+    const [selectionBBoxRotation, setSelectionBBoxRotation] = useState(0);
     const [isDraggingSelection, setIsDraggingSelection] = useState(false);
 
     const stageRef = useRef(null);
@@ -70,6 +71,11 @@ export default function Board({ shared = false }) {
     const selectionLassoDataRef = useRef(null);
     const selectionBBoxRef = useRef(null);
     const isDraggingSelectionRef = useRef(false);
+    const dragStartAngleRef = useRef(0);
+    const lastAngleRef = useRef(0);
+    const cumulativeDeltaRef = useRef(0);
+    const initialBoxRotRef = useRef(0);
+    const initialLinesRotRef = useRef({});
     useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
     useEffect(() => {selectionBBoxRef.current = selectionBBox}, [selectionBBox]);
@@ -126,7 +132,7 @@ export default function Board({ shared = false }) {
             const layer = stageRef.current?.findOne('.draw-layer');
             if (layer) {
                 layer.getChildren().forEach(line => {
-                    line.hitStrokeWidth(eraserSize);
+                    if (line.getClassName() === 'Line') line.hitStrokeWidth(eraserSize);
                 });
             }
         }
@@ -136,6 +142,7 @@ export default function Board({ shared = false }) {
         setSelectedIds([]);
         setSelectionLasso(null);
         setSelectionBBox(null);
+        setSelectionBBoxRotation(0);
         setIsDraggingSelection(false);
         if (selectionLassoRef.current) {
             selectionLassoRef.current.hide();
@@ -150,6 +157,7 @@ export default function Board({ shared = false }) {
 
     const handlePointerDown = useCallback((e) => {
         if (isPanningRef.current) return;
+        if (e.target !== e.target.getStage() && e.target.name() !== 'selection-box') return; // if we are using selectionBBox tools, ignore the event (except for the selection box itself)
         if (e.evt.pointerType === 'touch' && touchCountRef.current >= 1) return;
         if (e.evt.button === 1) {
             e.evt.preventDefault();
@@ -220,18 +228,20 @@ export default function Board({ shared = false }) {
         
         if (toolRef.current === 'select') {
 
-            if (selectionBBoxRef.current) {
-                const pos = {
-                    x: (pointerPos.x - stage.x()) / pointerScale,
-                    y: (pointerPos.y - stage.y()) / pointerScale,
-                }
-                if (pos.x >= selectionBBoxRef.current.x && pos.x <= selectionBBoxRef.current.x + selectionBBoxRef.current.width &&
-                    pos.y >= selectionBBoxRef.current.y && pos.y <= selectionBBoxRef.current.y + selectionBBoxRef.current.height) {
-                        setIsDraggingSelection(true);
-                        isDraggingSelectionRef.current = true;
-                        dragStartRef.current = { x: pos.x, y: pos.y };
-                        return;
+            if (e.target.name() === 'selection-box') {
+                if (selectionBBoxRef.current) {
+                    const pos = {
+                        x: (pointerPos.x - stage.x()) / pointerScale,
+                        y: (pointerPos.y - stage.y()) / pointerScale,
                     }
+                    if (pos.x >= selectionBBoxRef.current.x && pos.x <= selectionBBoxRef.current.x + selectionBBoxRef.current.width &&
+                        pos.y >= selectionBBoxRef.current.y && pos.y <= selectionBBoxRef.current.y + selectionBBoxRef.current.height) {
+                            setIsDraggingSelection(true);
+                            isDraggingSelectionRef.current = true;
+                            dragStartRef.current = { x: pos.x, y: pos.y };
+                            return;
+                        }
+                }
             }
 
             clearSelection();
@@ -379,7 +389,13 @@ export default function Board({ shared = false }) {
                 setLines(prev => {
                     const updated = prev.map(l => {
                         if (!selectedIdsRef.current.includes(l.id)) return l;
-                        return {...l, points: translatePoints(l.points, dx, dy)};
+                        return {...l, 
+                                points: translatePoints(l.points, dx, dy),
+                                x: l.x !== undefined ? l.x + dx : undefined,
+                                y: l.y !== undefined ? l.y + dy : undefined,
+                                offsetX: l.offsetX !== undefined ? l.offsetX + dx : undefined,
+                                offsetY: l.offsetY !== undefined ? l.offsetY + dy : undefined
+                            };
                     });
                     linesRef.current = updated;
                     return updated;
@@ -666,6 +682,86 @@ export default function Board({ shared = false }) {
         messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" });
     };
 
+    const handleRotationStart = (e) => {          
+        const centerX = selectionBBox.x + selectionBBox.width / 2;
+        const centerY = selectionBBox.y + selectionBBox.height / 2;
+        const stage = e.target.getStage();
+        const pointerPos = stage.getPointerPosition();
+        
+        lastAngleRef.current = Math.atan2(pointerPos.y - centerY, pointerPos.x - centerX) * (180 / Math.PI);
+        
+        cumulativeDeltaRef.current = 0; 
+
+        initialBoxRotRef.current = selectionBBoxRotation || 0;
+        
+        const initialData = {};
+        linesRef.current.forEach(l => {
+            if (selectedIds.includes(l.id)) {
+                initialData[l.id] = {
+                    rotation: l.rotation || 0,
+                    x: l.x !== undefined ? l.x : centerX,
+                    y: l.y !== undefined ? l.y : centerY,
+                    offsetX: l.offsetX !== undefined ? l.offsetX : centerX,
+                    offsetY: l.offsetY !== undefined ? l.offsetY : centerY,
+                };
+            }
+        });
+        initialLinesRotRef.current = initialData;
+    }
+
+    const handleRotationDrag = (e) => {                  
+        const centerX = selectionBBox.x + selectionBBox.width / 2;
+        const centerY = selectionBBox.y + selectionBBox.height / 2;
+        const stage = e.target.getStage();
+        const pointerPos = stage.getPointerPosition();
+        
+        const currentAngle = Math.atan2(pointerPos.y - centerY, pointerPos.x - centerX) * (180 / Math.PI);
+        
+        let frameDelta = currentAngle - lastAngleRef.current;
+
+        if (frameDelta > 180) frameDelta -= 360;
+        else if (frameDelta < -180) frameDelta += 360;
+
+        cumulativeDeltaRef.current += frameDelta;
+
+        lastAngleRef.current = currentAngle;
+
+        const totalDelta = cumulativeDeltaRef.current;
+        
+        setSelectionBBoxRotation(initialBoxRotRef.current + totalDelta);
+        
+        const rad = totalDelta * (Math.PI / 180);
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        
+        setLines(prev => prev.map(l => {
+            if (selectedIds.includes(l.id)) {
+                const init = initialLinesRotRef.current[l.id];
+
+                const dx = init.x - centerX;
+                const dy = init.y - centerY;
+
+                const newX = centerX + (dx * cos - dy * sin);
+                const newY = centerY + (dx * sin + dy * cos);
+
+                return { 
+                    ...l, 
+                    rotation: init.rotation + totalDelta,
+                    x: newX,
+                    y: newY,
+                    offsetX: init.offsetX,
+                    offsetY: init.offsetY
+                };
+            }
+            return l;
+        }));
+    }
+
+    const handleRotationEnd = (e) => {
+        // socket emit change
+        return;
+    }
+
     return (
         <div className="h-screen overflow-hidden relative bg-white" style={{ height: '100dvh' }} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}>
 
@@ -740,6 +836,11 @@ export default function Board({ shared = false }) {
                                 lineCap={line.lineCap}
                                 lineJoin={line.lineJoin}
                                 dash={line.dash}
+                                x={line.x}
+                                y={line.y}
+                                offsetX={line.offsetX}
+                                offsetY={line.offsetY}
+                                rotation={line.rotation}
                                 listening={true}
                             />
                         );
@@ -777,9 +878,55 @@ export default function Board({ shared = false }) {
                         visible={false}
                         opacity={0.7}
                     />
+
+                    {selectedIds.length > 0 && lines.filter(l => selectedIds.includes(l.id)).map(l=>{
+                        if (l.type === 'circle') {
+                            const { x_center, y_center, radius } = computeCircleData(l.points);
+                            return (
+                                <Circle
+                                    key={`sel_${l.id}`}
+                                    x={x_center}
+                                    y={y_center}
+                                    rotation={l.rotation || 0}
+                                    radius={radius}
+                                    stroke="#3b82f6"
+                                    strokeWidth={(l.strokeWidth || 3) + 4}
+                                    opacity={0.25}
+                                    listening={false}
+                                />
+                            );
+                        }
+                        else return (
+                            <Line
+                                key={`sel_${l.id}`}
+                                points={l.points}
+                                stroke="#3b82f6"
+                                strokeWidth={(l.strokeWidth || 3) + 4}
+                                opacity={0.25}
+                                tension={l.tension}
+                                closed={l.closed}
+                                lineCap={l.lineCap}
+                                lineJoin={l.lineJoin}
+                                x={l.x || 0}
+                                y={l.y || 0}
+                                offsetX={l.offsetX || 0}
+                                offsetY={l.offsetY || 0}
+                                rotation={l.rotation || 0}
+                                listening={false}
+                            />
+                        )
+                    })}
+
                     {selectionBBox && (
-                        <>
+                        <Group
+                            x={selectionBBox.x + selectionBBox.width / 2}
+                            y={selectionBBox.y + selectionBBox.height / 2}
+                            offsetX={selectionBBox.x + selectionBBox.width / 2}
+                            offsetY={selectionBBox.y + selectionBBox.height / 2}
+                            rotation={selectionBBoxRotation || 0}
+                        >
                             <Rect
+                                name="selection-box"
                                 x={selectionBBox.x}
                                 y={selectionBBox.y}
                                 width={selectionBBox.width}
@@ -787,27 +934,70 @@ export default function Board({ shared = false }) {
                                 stroke={SELECTION_BOX_COLOR}
                                 strokeWidth={1.5}
                                 dash={[6, 3]}
-                                listening={false}
+                                listening={true}
                                 fill="rgba(59, 130, 246, 0.05)"
                             />
-                        </>
-                    )   
-                    }
 
-                    {selectedIds.length > 0 && lines.filter(l => selectedIds.includes(l.id)).map(l=>(
-                        <Line
-                            key={`sel_${l.id}`}
-                            points={l.points}
-                            stroke="#3b82f6"
-                            strokeWidth={(l.strokeWidth || 3) + 4}
-                            opacity={0.25}
-                            tension={l.tension}
-                            closed={l.closed}
-                            lineCap={l.lineCap}
-                            lineJoin={l.lineJoin}
-                            listening={false}
-                        />
-                    ))}
+                            <Rect x={selectionBBox.x - 4} y={selectionBBox.y - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+                            <Rect x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+                            <Rect x={selectionBBox.x - 4} y={selectionBBox.y + selectionBBox.height - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+                            <Rect x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y + selectionBBox.height - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+
+                            <Rect x={selectionBBox.x + selectionBBox.width / 2 - 4} y={selectionBBox.y - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+                            <Rect x={selectionBBox.x + selectionBBox.width / 2 - 4} y={selectionBBox.y + selectionBBox.height - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} />
+                            <Rect x={selectionBBox.x - 4} y={selectionBBox.y + selectionBBox.height / 2 - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+                            <Rect x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y + selectionBBox.height / 2 - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+
+                            <Line 
+                                points={[
+                                    selectionBBox.x + selectionBBox.width / 2, selectionBBox.y - 25, 
+                                    selectionBBox.x + selectionBBox.width / 2, selectionBBox.y
+                                ]} 
+                                stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                dash={[4, 2]} 
+                                listening={false} 
+                            />
+                        
+                            <Group
+                                name="rotation-handler"
+                                x={selectionBBox.x + selectionBBox.width / 2} 
+                                y={selectionBBox.y - 25}
+                                listening={true}
+                                draggable={true}
+
+                                dragBoundFunc={function(pos) {return this.absolutePosition();}} // this is done to maintain draggable object in-place during dragging
+
+                                onMouseEnter={(e) => { e.target.getStage().container().style.cursor = 'grab'; }}
+                                onMouseLeave={(e) => { e.target.getStage().container().style.cursor = 'default'; }}
+                                onDragStart={(e) => {handleRotationStart(e)}}
+                                onDragMove={(e) => {handleRotationDrag(e)}}
+                                onDragEnd={handleRotationEnd}
+                            >
+                                <Circle 
+                                    x={0} 
+                                    y={0} 
+                                    radius={12} 
+                                    fill="white" 
+                                    stroke={SELECTION_BOX_COLOR} 
+                                    strokeWidth={1.25} 
+                                />
+
+                                <Text
+                                    x={0} 
+                                    y={0} 
+                                    text="↻" 
+                                    fontSize={18} 
+                                    fill={SELECTION_BOX_COLOR} 
+                                    offsetX={7} 
+                                    offsetY={9.5} 
+                                    fontStyle="normal" 
+                                />
+                            </Group>
+                            
+                        </Group>
+                    )}
+
                 </Layer>
             </Stage>
 

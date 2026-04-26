@@ -137,25 +137,62 @@ export function lineIntersectsOrInsidePolygon(line, polygon) {
 }
 
 export function computeSelectionBBox(lines) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity; // just js things
+
+    const rotatePoint = (px, py, originX, originY, angleDeg) => {
+        if (!angleDeg) return { x: px, y: py };
+        const rad = (angleDeg * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        
+        const dx = px - originX;
+        const dy = py - originY;
+        
+        return {
+            x: cos * dx - sin * dy + originX,
+            y: sin * dx + cos * dy + originY
+        };
+    };
+
     for (const line of lines) {
+        const rot = line.rotation || 0;
+        const originX = line.offsetX || 0;
+        const originY = line.offsetY || 0;
+        
+        const shiftX = (line.x || 0) - originX;
+        const shiftY = (line.y || 0) - originY;
+
         if (line.type === 'circle') {
             const { x_center, y_center, radius } = computeCircleData(line.points);
             const sw = line.strokeWidth || 0;
-            minX = Math.min(minX, x_center - radius - sw);
-            minY = Math.min(minY, y_center - radius - sw);
-            maxX = Math.max(maxX, x_center + radius + sw);
-            maxY = Math.max(maxY, y_center + radius + sw);
+            
+            const rotatedCenter = rotatePoint(x_center, y_center, originX, originY, rot);
+            const finalCX = rotatedCenter.x + shiftX;
+            const finalCY = rotatedCenter.y + shiftY;
+
+            minX = Math.min(minX, finalCX - radius - sw);
+            minY = Math.min(minY, finalCY - radius - sw);
+            maxX = Math.max(maxX, finalCX + radius + sw);
+            maxY = Math.max(maxY, finalCY + radius + sw);
+            
         } else {
             const sw = line.strokeWidth || 0;
             for (let i = 0; i < line.points.length; i += 2) {
-                minX = Math.min(minX, line.points[i] - sw);
-                minY = Math.min(minY, line.points[i + 1] - sw);
-                maxX = Math.max(maxX, line.points[i] + sw);
-                maxY = Math.max(maxY, line.points[i + 1] + sw);
+                const px = line.points[i];
+                const py = line.points[i + 1];
+                
+                const rotated = rotatePoint(px, py, originX, originY, rot);
+                const finalX = rotated.x + shiftX;
+                const finalY = rotated.y + shiftY;
+
+                minX = Math.min(minX, finalX - sw);
+                minY = Math.min(minY, finalY - sw);
+                maxX = Math.max(maxX, finalX + sw);
+                maxY = Math.max(maxY, finalY + sw);
             }
         }
     }
+
     const padding = 10;
     return {
         x: minX - padding,
