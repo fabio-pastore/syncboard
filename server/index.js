@@ -143,7 +143,17 @@ io.on('connection', (socket) => {
         if (op === 'draw') {
             socket.to(roomId).emit('board:draw:undo', { lineId, op });
             await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } });
-        } else {
+        } 
+        
+        else if (op === 'rotate') {
+            socket.to(roomId).emit('board:draw:undo', { lineId, op, line });
+            if (!line) return;
+            const { prevLine, newLine } = line;
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: prevLine.id } } });
+            await Board.updateOne({ _id: roomId }, { $push: { content: prevLine } });
+        }
+        
+        else {
             socket.to(roomId).emit('board:draw:undo', { lineId, op, line });
             await Board.updateOne({ _id: roomId }, { $push: { content: line } });
         }
@@ -156,7 +166,17 @@ io.on('connection', (socket) => {
         if (op === 'draw') {
             socket.to(roomId).emit('board:draw:redo', { lineId, op, line });
             await Board.updateOne({ _id: roomId }, { $push: { content: line } }); 
-        } else {
+        } 
+        
+        else if (op === 'rotate') {
+            socket.to(roomId).emit('board:draw:redo', { lineId, op, line });
+            if (!line) return;
+            const { prevLine, newLine } = line;
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: prevLine.id } } });
+            await Board.updateOne({ _id: roomId }, { $push: { content: newLine } });
+        }
+        
+        else {
             socket.to(roomId).emit('board:draw:redo', { lineId, op }); 
             await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } }); 
         }

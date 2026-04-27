@@ -86,6 +86,20 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 if (!data_payload) return;
                 const { lineId, op, line } = data_payload;
                 if (op === 'draw') setLines((prev) => prev.filter((l) => l.id !== lineId));
+
+                else if (op === 'rotate') {
+                    if (!line) return;
+                    const { prevLine } = line;
+                    setLines((prev) => {
+                        return prev.map(l => {
+                            if (l.id === prevLine.id) {
+                                return prevLine;
+                            }
+                            return l;
+                        });
+                    });
+                }
+                
                 else {
                     setLines((prev) => {
                         const newLines = prev.some(l => l.id === line.id) ? prev : [...prev, line];
@@ -104,6 +118,21 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                         return reorderLines(newLines);
                     });
                 }
+
+                else if (op === 'rotate') {
+                    if (!line) return;
+                    const { newLine } = line;
+                    setLines((prev) => {
+                        return prev.map(l => {
+                            if (l.id === newLine.id) {
+                                return newLine;
+                            }
+                            return l;
+                        });
+                    });
+                    onShapeUpdate(line.id);
+                }
+
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));
             });
 

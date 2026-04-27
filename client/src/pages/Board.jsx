@@ -652,7 +652,22 @@ export default function Board({ shared = false }) {
             if (last_edit.op === 'draw') {
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
                 socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw' });
-            } else {
+            } 
+            
+            else if (last_edit.op === 'rotate') {
+                setLines((prev) => {
+                    return prev.map(l => {
+                        if (l.id === last_edit.prev_line.id) {
+                            return last_edit.prev_line;
+                        }
+                        return l;
+                    });
+                });
+                clearSelection();
+                socketRef.current?.emit('board:draw:undo', {lineId: last_edit.prev_line.id, op: 'rotate', line: {prevLine: last_edit.prev_line, newLine: last_edit.new_line}});
+            }
+
+            else {
                 setLines((prevLines) => {
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
                     const newLines = [...prevLines, last_edit.line];
@@ -678,7 +693,22 @@ export default function Board({ shared = false }) {
                     return sortLinesByTime(newLines) 
                 });
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw', line: last_edit.line });
-            } else {
+            } 
+            
+            else if (last_edit.op === 'rotate') {
+                setLines((prev) => {
+                    return prev.map(l => {
+                        if (l.id === last_edit.new_line.id) {
+                            return last_edit.new_line;
+                        }
+                        return l;
+                    });
+                });
+                clearSelection();
+                socketRef.current?.emit('board:draw:redo', {lineId: last_edit.prev_line.id, op: 'rotate', line: {prevLine: last_edit.prev_line, newLine: last_edit.new_line}});
+            }
+            
+            else {
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'erase' });
             }
@@ -830,6 +860,7 @@ export default function Board({ shared = false }) {
         const currentBBox = selectionBBoxRef.current;
         const centerX = currentBBox.x + currentBBox.width / 2;
         const centerY = currentBBox.y + currentBBox.height / 2;
+        const currLines = linesRef.current;
 
         const updatedLines = linesRef.current.map(l => {
             if (!selectedIdsRef.current.includes(l.id)) return l;
@@ -869,12 +900,36 @@ export default function Board({ shared = false }) {
             };
         });
 
-        setLines(updatedLines);
         linesRef.current = updatedLines;
+        setLines(updatedLines);
 
         selectedIdsRef.current.forEach(id => {
-                socketRef.current?.emit('board:draw:line', linesRef.current?.find(l => l.id === id));  
-            });
+            const lineId = id;
+            const newLineData = linesRef.current?.find(l => l.id === lineId);
+
+            const initialLineData = initialLinesRotRef.current?.[id];
+            const fallbackLineData = currLines.find(l => l.id === id);
+            
+            const oldLineData = { // save line data prior to rotation to restore it in case of undo, we later pass this data to setHistory()
+                ...fallbackLineData,
+                rotation: initialLineData ? initialLineData.rotation : 0,
+                x: initialLineData ? initialLineData.x : fallbackLineData.x,
+                y: initialLineData ? initialLineData.y : fallbackLineData.y,
+                offsetX: initialLineData ? initialLineData.offsetX : fallbackLineData.offsetX,
+                offsetY: initialLineData ? initialLineData.offsetY : fallbackLineData.offsetY
+            }
+
+            if (oldLineData) {
+                setEditHistory((prev) => {
+                    let newHistory;
+                    if (prev.history.length < NUM_MAX_UNDO) {
+                        newHistory = [...prev.history.slice(0, prev.editIndex + 1), { prev_line: oldLineData, new_line: newLineData, op: "rotate" }];
+                    } else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { prev_line: oldLineData, new_line: newLineData, op: "rotate"}];
+                    return { history: newHistory, editIndex: newHistory.length - 1 };
+                });  
+            }
+            socketRef.current?.emit('board:draw:line', newLineData);
+        });
 
     }, []);
 
@@ -904,51 +959,48 @@ export default function Board({ shared = false }) {
                 }}
             >
                 <Layer name="draw-layer">
-                    {lines.map((line) => {
+                    {lines.filter(line => !selectedIds.includes(line.id)).map((line) => {
                         if (line.type === 'circle') {
-                            if (line.type === 'circle') {
-                                const { x_center, y_center, radius } = computeCircleData(line.points);
-                                const sw = line.strokeWidth || 0;
-                                
-                                return (
-                                    <Group
-                                        key={line.id}
-                                        x={line.x || 0}
-                                        y={line.y || 0}
-                                        offsetX={line.offsetX || 0}
-                                        offsetY={line.offsetY || 0}
-                                        rotation={line.rotation || 0}
-                                    >
-                                        {line.fill && (
-                                            <Circle
-                                                key={line.id + '_fill'}
-                                                id={line.id}
-                                                x={x_center}
-                                                y={y_center}
-                                                radius={Math.max(0, radius - sw / 2)}
-                                                fill={line.fill}
-                                                globalCompositeOperation={line.globalCompositeOperation}
-                                                listening={true}
-                                            />
-                                        )}
+                            const { x_center, y_center, radius } = computeCircleData(line.points);
+                            const sw = line.strokeWidth || 0;
+                            return (
+                                <Group
+                                    key={line.id}
+                                    x={line.x || 0}
+                                    y={line.y || 0}
+                                    offsetX={line.offsetX || 0}
+                                    offsetY={line.offsetY || 0}
+                                    rotation={line.rotation || 0}
+                                >
+                                    {line.fill && (
                                         <Circle
+                                            key={line.id + '_fill'}
                                             id={line.id} 
                                             x={x_center}
                                             y={y_center}
-                                            radius={radius}
-                                            stroke={line.color}
-                                            strokeWidth={sw}
+                                            radius={Math.max(0, radius - sw / 2)}
+                                            fill={line.fill}
                                             globalCompositeOperation={line.globalCompositeOperation}
                                             listening={true}
                                         />
-                                    </Group>
-                                );
-                            }
+                                    )}
+                                    <Circle
+                                        id={line.id} 
+                                        x={x_center}
+                                        y={y_center}
+                                        radius={radius}
+                                        stroke={line.color}
+                                        strokeWidth={sw}
+                                        globalCompositeOperation={line.globalCompositeOperation}
+                                        listening={true}
+                                    />
+                                </Group>
+                            );
                         }
                         return (
                             <Line
                                 key={line.id}
-                                id={line.id}
+                                id={line.id} 
                                 points={line.points}
                                 stroke={line.color}
                                 fill={line.fill}
@@ -968,6 +1020,94 @@ export default function Board({ shared = false }) {
                                 rotation={line.rotation}
                                 listening={true}
                             />
+                        );
+                    })}
+
+                    {lines.filter(line => selectedIds.includes(line.id)).map((line) => {
+                        if (line.type === 'circle') {
+                            const { x_center, y_center, radius } = computeCircleData(line.points);
+                            const sw = line.strokeWidth || 0;
+                            return (
+                                <Group
+                                    key={`sel_${line.id}`}
+                                    x={line.x || 0}
+                                    y={line.y || 0}
+                                    offsetX={line.offsetX || 0}
+                                    offsetY={line.offsetY || 0}
+                                    rotation={line.rotation || 0}
+                                >
+                                    <Circle
+                                        x={x_center}
+                                        y={y_center}
+                                        radius={radius}
+                                        stroke="#3b82f6"
+                                        strokeWidth={sw + 12}
+                                        opacity={0.75}
+                                        listening={false} 
+                                    />
+                                
+                                    {line.fill && (
+                                        <Circle
+                                            id={line.id} 
+                                            x={x_center}
+                                            y={y_center}
+                                            radius={Math.max(0, radius - sw / 2)}
+                                            fill={line.fill}
+                                            globalCompositeOperation={line.globalCompositeOperation}
+                                            listening={true}
+                                        />
+                                    )}
+                                    <Circle
+                                        id={line.id} 
+                                        x={x_center}
+                                        y={y_center}
+                                        radius={radius}
+                                        stroke={line.color}
+                                        strokeWidth={sw}
+                                        globalCompositeOperation={line.globalCompositeOperation}
+                                        listening={true}
+                                    />
+                                </Group>
+                            );
+                        }
+                        return (
+                            <Group
+                                key={line.id}
+                                x={line.x || 0}
+                                y={line.y || 0}
+                                offsetX={line.offsetX || 0}
+                                offsetY={line.offsetY || 0}
+                                rotation={line.rotation || 0}
+                            >
+                                <Line
+                                    points={line.points}
+                                    stroke="#3b82f6"
+                                    strokeWidth={(line.strokeWidth || 3) + 12}
+                                    opacity={0.75}
+                                    tension={line.tension}
+                                    closed={line.closed}
+                                    lineCap={line.lineCap}
+                                    lineJoin={line.lineJoin}
+                                    listening={false}
+                                />
+                                
+                                <Line
+                                    id={line.id}
+                                    points={line.points}
+                                    stroke={line.color}
+                                    fill={line.fill}
+                                    strokeWidth={line.strokeWidth}
+                                    opacity={line.opacity}
+                                    hitStrokeWidth={line.hitStrokeWidth}
+                                    tension={line.tension}
+                                    globalCompositeOperation={line.globalCompositeOperation}
+                                    closed={line.closed}
+                                    lineCap={line.lineCap}
+                                    lineJoin={line.lineJoin}
+                                    dash={line.dash}
+                                    listening={true}
+                                />
+                            </Group>
                         );
                     })}
 
@@ -1003,55 +1143,6 @@ export default function Board({ shared = false }) {
                         visible={false}
                         opacity={0.7}
                     />
-
-                    {selectedIds.length > 0 && lines.filter(l => selectedIds.includes(l.id)).map(l=>{
-                        if (l.type === 'circle') {
-                            const { x_center, y_center, radius } = computeCircleData(l.points);
-                            return (
-                                <Group
-                                    key={`sel_${l.id}`}
-                                    x={l.x || 0}
-                                    y={l.y || 0}
-                                    offsetX={l.offsetX || 0}
-                                    offsetY={l.offsetY || 0}
-                                    rotation={l.rotation || 0}
-                                >
-                                    <Circle
-                                        key={`sel_${l.id}`}
-                                        x={x_center}
-                                        y={y_center}
-                                        rotation={l.rotation || 0}
-                                        radius={radius}
-                                        stroke="#3b82f6"
-                                        strokeWidth={(l.strokeWidth || 3) + 12}
-                                        opacity={0.75}
-                                        listening={false}
-                                        globalCompositeOperation="destination-over"
-                                    />
-                                </Group>
-                            );
-                        }
-                        else return (
-                            <Line
-                                key={`sel_${l.id}`}
-                                points={l.points}
-                                stroke="#3b82f6"
-                                strokeWidth={(l.strokeWidth || 3) + 12}
-                                opacity={0.75}
-                                tension={l.tension}
-                                closed={l.closed}
-                                lineCap={l.lineCap}
-                                lineJoin={l.lineJoin}
-                                x={l.x || 0}
-                                y={l.y || 0}
-                                offsetX={l.offsetX || 0}
-                                offsetY={l.offsetY || 0}
-                                rotation={l.rotation || 0}
-                                listening={false}
-                                globalCompositeOperation="destination-over"
-                            />
-                        )
-                    })}
 
                     {selectionBBox && (
                         <Group
