@@ -164,7 +164,7 @@ export default function Board({ shared = false }) {
 
     const handlePointerDown = useCallback((e) => {
         if (isPanningRef.current) return;
-        if (e.target !== e.target.getStage() && e.target.name() !== 'selection-box') return; // if we are using selectionBBox tools, ignore the event (except for the selection box itself)
+        if (e.target !== e.target.getStage() && e.target.name() !== 'selection-box' && !e.target.id()) return; // if we are using selectionBBox tools, ignore the event (except for the selection box itself)
         if (e.evt.pointerType === 'touch' && touchCountRef.current >= 1) return;
         if (e.evt.button === 1) {
             e.evt.preventDefault();
@@ -220,7 +220,7 @@ export default function Board({ shared = false }) {
                 if (lineData) {
                     setLines((prev) => prev.filter((l) => l.id !== lineId));
                     setEditHistory((prev) => {
-                        if (prev.history.some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
+                        if (prev.history.slice(0, prev.editIndex + 1).some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
                         let newHistory;
                         if (prev.history.length < NUM_MAX_UNDO) {
                             newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lineData, op: "erase" }];
@@ -370,7 +370,7 @@ export default function Board({ shared = false }) {
                 if (lineData) {
                     setLines((prev) => prev.filter((l) => l.id !== lineId));
                     setEditHistory((prev) => {
-                        if (prev.history.some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
+                        if (prev.history.slice(1, prev.editIndex + 1).some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
                         let newHistory;
                         if (prev.history.length < NUM_MAX_UNDO) {
                             newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lineData, op: "erase" }];
@@ -622,6 +622,14 @@ export default function Board({ shared = false }) {
         }
     }, []);
 
+    const sortLinesByTime = (linesArray) => {
+        return [...linesArray].sort((x, y) => {
+            const timeX = parseInt(x.id.split('_')[0], 10);
+            const timeY = parseInt(y.id.split('_')[0], 10);
+            return timeX - timeY;
+        });
+    };
+
     const handleUndo = useCallback(() => {
         setEditHistory((prevHistory) => {
             if (prevHistory.history.length === 0 || prevHistory.editIndex === -1) return prevHistory;
@@ -633,7 +641,8 @@ export default function Board({ shared = false }) {
             } else {
                 setLines((prevLines) => {
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
-                    return [...prevLines, last_edit.line];
+                    const newLines = [...prevLines, last_edit.line];
+                    return sortLinesByTime(newLines)
                 });
                 socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'erase', line: last_edit.line });
             }
@@ -644,11 +653,14 @@ export default function Board({ shared = false }) {
     const handleRedo = useCallback(() => {
         setEditHistory((prevHistory) => {
             if (prevHistory.history.length === 0 || prevHistory.editIndex === prevHistory.history.length - 1) return prevHistory;
+            
             const last_edit = prevHistory.history.at(prevHistory.editIndex + 1);
             if (last_edit.op === 'draw') {
                 setLines((prevLines) => {
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
-                    return [...prevLines, last_edit.line];
+                    const newLines = [...prevLines, last_edit.line];
+                    // since lines are displayed one above another depending on WHEN they were drawn, we must sort them by the moment in time in which they were drawn to maintain original order
+                    return sortLinesByTime(newLines) 
                 });
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw', line: last_edit.line });
             } else {
