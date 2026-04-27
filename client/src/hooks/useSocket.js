@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import { apiFetch } from "../api";
 import { SOCKET_URL } from "../utils/boardConstants";
 
-export default function useSocket({ id, token, shared, onShapeUpdate }) {
+export default function useSocket({ id, token, shared, onShapeUpdate, reorderLines }) {
     const [board, setBoard] = useState(null);
     const [lines, setLines] = useState([]);
     const [peers, setPeers] = useState(0);
@@ -79,21 +79,31 @@ export default function useSocket({ id, token, shared, onShapeUpdate }) {
 
             sock.on('board:draw:erase', (lineId) => {
                 setLines((prev) => prev.filter((l) => l.id !== lineId));
-                onShapeUpdate(line.id); // same as above
+                onShapeUpdate(lineId); // same as above
             });
 
             sock.on('board:draw:undo', (data_payload) => {
                 if (!data_payload) return;
                 const { lineId, op, line } = data_payload;
                 if (op === 'draw') setLines((prev) => prev.filter((l) => l.id !== lineId));
-                else setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
+                else {
+                    setLines((prev) => {
+                        const newLines = prev.some(l => l.id === line.id) ? prev : [...prev, line];
+                        return reorderLines(newLines);
+                    });
+                }
                 onShapeUpdate(lineId); // same as above
             });
 
             sock.on('board:draw:redo', (data_payload) => {
                 if (!data_payload) return;
                 const { lineId, op, line } = data_payload;
-                if (op === 'draw') setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
+                if (op === 'draw') {
+                    setLines((prev) => {
+                        const newLines = prev.some(l => l.id === line.id) ? prev : [...prev, line];
+                        return reorderLines(newLines);
+                    });
+                }
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));
             });
 

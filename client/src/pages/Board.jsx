@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Stage, Layer, Line, Circle, Rect, Text, Group } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, MessageCircle, Users, Share2, X, Send, User } from "lucide-react";
@@ -107,8 +107,18 @@ export default function Board({ shared = false }) {
     }
 }, [clearSelection]);
 
+    const sortLinesByTime = (linesArray) => {
+            return [...linesArray].sort((x, y) => {
+                const timeX = parseInt(x.id.split('_')[0], 10);
+                const timeY = parseInt(y.id.split('_')[0], 10);
+                return timeX - timeY;
+            });
+        };
+
+    const reorderLines = useCallback((lines) => sortLinesByTime(lines), [sortLinesByTime])
+
     const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, 
-            role, error, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit });
+            role, error, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines: reorderLines });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
@@ -117,7 +127,19 @@ export default function Board({ shared = false }) {
     const onKeyDown = (e) => {
         if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
             selectedIds.forEach(id => {
-                socketRef.current?.emit('board:draw:erase', id);
+                const lineId = id;
+                const lineData = linesRef.current?.find(l => l.id === lineId);
+                if (lineData) {
+                    setEditHistory((prev) => {
+                        if (prev.history.slice(0, prev.editIndex + 1).some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
+                        let newHistory;
+                        if (prev.history.length < NUM_MAX_UNDO) {
+                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lineData, op: "erase" }];
+                        } else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: lineData, op: "erase" }];
+                        return { history: newHistory, editIndex: newHistory.length - 1 };
+                    });
+                    socketRef.current?.emit('board:draw:erase', lineId);
+                }
             });
             setLines(prev => prev.filter(l => !selectedIds.includes(l.id)));
             clearSelection();
@@ -622,14 +644,6 @@ export default function Board({ shared = false }) {
         }
     }, []);
 
-    const sortLinesByTime = (linesArray) => {
-        return [...linesArray].sort((x, y) => {
-            const timeX = parseInt(x.id.split('_')[0], 10);
-            const timeY = parseInt(y.id.split('_')[0], 10);
-            return timeX - timeY;
-        });
-    };
-
     const handleUndo = useCallback(() => {
         setEditHistory((prevHistory) => {
             if (prevHistory.history.length === 0 || prevHistory.editIndex === -1) return prevHistory;
@@ -659,7 +673,8 @@ export default function Board({ shared = false }) {
                 setLines((prevLines) => {
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
                     const newLines = [...prevLines, last_edit.line];
-                    // since lines are displayed one above another depending on WHEN they were drawn, we must sort them by the moment in time in which they were drawn to maintain original order
+                    // since lines are drawn one above another on konva depending on the order in which they appear in the lines array, 
+                    // we must sort them by draw time before returning the updated array to maintaing the draw order on the canva
                     return sortLinesByTime(newLines) 
                 });
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw', line: last_edit.line });
@@ -670,6 +685,33 @@ export default function Board({ shared = false }) {
             return { history: prevHistory.history, editIndex: prevHistory.editIndex + 1 };
         });
     }, []);
+
+    useEffect(() => {
+    const handleUndoRedoShortcuts = (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0; // this works apparently
+        const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+        if (!cmdOrCtrl) return;
+
+        if (e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            if (e.shiftKey) handleRedo(); // CTRL + Shift + Z
+            else handleUndo(); // CTRL + Z
+        }
+        else if (e.key.toLowerCase() === 'y') { 
+            e.preventDefault();
+            handleRedo(); // CTRL + Y
+        }
+        else {} // do nothing
+    };
+
+    window.addEventListener('keydown', handleUndoRedoShortcuts);
+
+    return () => {
+        window.removeEventListener('keydown', handleUndoRedoShortcuts); // remove listener on cleanup
+    };
+}, [handleUndo, handleRedo]);
 
     const activeSize = (tool === 'eraser') ? eraserSize : (tool === 'highlighter') ? highlighterSize : (tool === 'shape') ? shapeWidth : strokeWidth;
     const setActiveSize = (fn) => {
@@ -705,12 +747,15 @@ export default function Board({ shared = false }) {
         const centerX = selectionBBox.x + selectionBBox.width / 2;
         const centerY = selectionBBox.y + selectionBBox.height / 2;
         const stage = e.target.getStage();
-        const pointerPos = stage.getPointerPosition();
         
-        lastAngleRef.current = Math.atan2(pointerPos.y - centerY, pointerPos.x - centerX) * (180 / Math.PI);
+        const pointerPos = stage.getPointerPosition();
+        const scale = stage.scaleX() || 1;
+        const virtualX = (pointerPos.x - stage.x()) / scale;
+        const virtualY = (pointerPos.y - stage.y()) / scale;
+        
+        lastAngleRef.current = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
         
         cumulativeDeltaRef.current = 0; 
-
         initialBoxRotRef.current = selectionBBoxRotation || 0;
         
         const initialData = {};
@@ -732,9 +777,13 @@ export default function Board({ shared = false }) {
         const centerX = selectionBBox.x + selectionBBox.width / 2;
         const centerY = selectionBBox.y + selectionBBox.height / 2;
         const stage = e.target.getStage();
-        const pointerPos = stage.getPointerPosition();
         
-        const currentAngle = Math.atan2(pointerPos.y - centerY, pointerPos.x - centerX) * (180 / Math.PI);
+        const pointerPos = stage.getPointerPosition();
+        const scale = stage.scaleX() || 1;
+        const virtualX = (pointerPos.x - stage.x()) / scale;
+        const virtualY = (pointerPos.y - stage.y()) / scale;
+        
+        const currentAngle = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
 
         let frameDelta = currentAngle - lastAngleRef.current;
 
@@ -742,7 +791,6 @@ export default function Board({ shared = false }) {
         else if (frameDelta < -180) frameDelta += 360;
 
         cumulativeDeltaRef.current += frameDelta;
-
         lastAngleRef.current = currentAngle;
 
         const totalDelta = cumulativeDeltaRef.current;
@@ -858,35 +906,44 @@ export default function Board({ shared = false }) {
                 <Layer name="draw-layer">
                     {lines.map((line) => {
                         if (line.type === 'circle') {
-                            const { x_center, y_center, radius } = computeCircleData(line.points);
-                            const sw = line.strokeWidth || 0;
-                            return (
-                                <Fragment key={line.id}>
-                                    {line.fill && (
+                            if (line.type === 'circle') {
+                                const { x_center, y_center, radius } = computeCircleData(line.points);
+                                const sw = line.strokeWidth || 0;
+                                
+                                return (
+                                    <Group
+                                        key={line.id}
+                                        x={line.x || 0}
+                                        y={line.y || 0}
+                                        offsetX={line.offsetX || 0}
+                                        offsetY={line.offsetY || 0}
+                                        rotation={line.rotation || 0}
+                                    >
+                                        {line.fill && (
+                                            <Circle
+                                                key={line.id + '_fill'}
+                                                id={line.id}
+                                                x={x_center}
+                                                y={y_center}
+                                                radius={Math.max(0, radius - sw / 2)}
+                                                fill={line.fill}
+                                                globalCompositeOperation={line.globalCompositeOperation}
+                                                listening={true}
+                                            />
+                                        )}
                                         <Circle
-                                            key={line.id + '_fill'}
-                                            id={line.id}
+                                            id={line.id} 
                                             x={x_center}
                                             y={y_center}
-                                            radius={Math.max(0, radius - sw / 2)}
-                                            fill={line.fill}
+                                            radius={radius}
+                                            stroke={line.color}
+                                            strokeWidth={sw}
                                             globalCompositeOperation={line.globalCompositeOperation}
                                             listening={true}
                                         />
-                                    )}
-                                    <Circle
-                                        key={line.id}
-                                        id={line.id}
-                                        x={x_center}
-                                        y={y_center}
-                                        radius={radius}
-                                        stroke={line.color}
-                                        strokeWidth={sw}
-                                        globalCompositeOperation={line.globalCompositeOperation}
-                                        listening={true}
-                                    />
-                                </Fragment>
-                            );
+                                    </Group>
+                                );
+                            }
                         }
                         return (
                             <Line
@@ -951,17 +1008,27 @@ export default function Board({ shared = false }) {
                         if (l.type === 'circle') {
                             const { x_center, y_center, radius } = computeCircleData(l.points);
                             return (
-                                <Circle
+                                <Group
                                     key={`sel_${l.id}`}
-                                    x={x_center}
-                                    y={y_center}
+                                    x={l.x || 0}
+                                    y={l.y || 0}
+                                    offsetX={l.offsetX || 0}
+                                    offsetY={l.offsetY || 0}
                                     rotation={l.rotation || 0}
-                                    radius={radius}
-                                    stroke="#3b82f6"
-                                    strokeWidth={(l.strokeWidth || 3) + 4}
-                                    opacity={0.25}
-                                    listening={false}
-                                />
+                                >
+                                    <Circle
+                                        key={`sel_${l.id}`}
+                                        x={x_center}
+                                        y={y_center}
+                                        rotation={l.rotation || 0}
+                                        radius={radius}
+                                        stroke="#3b82f6"
+                                        strokeWidth={(l.strokeWidth || 3) + 12}
+                                        opacity={0.75}
+                                        listening={false}
+                                        globalCompositeOperation="destination-over"
+                                    />
+                                </Group>
                             );
                         }
                         else return (
@@ -969,8 +1036,8 @@ export default function Board({ shared = false }) {
                                 key={`sel_${l.id}`}
                                 points={l.points}
                                 stroke="#3b82f6"
-                                strokeWidth={(l.strokeWidth || 3) + 4}
-                                opacity={0.25}
+                                strokeWidth={(l.strokeWidth || 3) + 12}
+                                opacity={0.75}
                                 tension={l.tension}
                                 closed={l.closed}
                                 lineCap={l.lineCap}
@@ -981,6 +1048,7 @@ export default function Board({ shared = false }) {
                                 offsetY={l.offsetY || 0}
                                 rotation={l.rotation || 0}
                                 listening={false}
+                                globalCompositeOperation="destination-over"
                             />
                         )
                     })}
