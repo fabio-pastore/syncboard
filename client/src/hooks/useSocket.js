@@ -82,12 +82,22 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 onShapeUpdate(lineId); // same as above
             });
 
+            sock.on('board:draw:group_erase', (erasedIds) => {
+                setLines((prev) => prev.filter((l) => !erasedIds.includes(l.id)));
+                erasedIds.forEach(lineId => {
+                    onShapeUpdate(lineId);
+                });
+            });
+
             sock.on('board:draw:undo', (data_payload) => {
                 if (!data_payload) return;
                 const { lineId, op, line } = data_payload;
-                if (op === 'draw') setLines((prev) => prev.filter((l) => l.id !== lineId));
+                if (op === 'draw') {
+                    setLines((prev) => prev.filter((l) => l.id !== lineId));
+                    onShapeUpdate(lineId);
+                }
 
-                else if (op === 'rotate') {
+                else if (op === 'rotate' || op === 'drag') {
                     if (!line) return;
                     const { prevLine } = line;
                     setLines((prev) => {
@@ -98,6 +108,19 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                             return l;
                         });
                     });
+                    onShapeUpdate(line.id);
+                }
+
+                else if (op === 'group_erase') {
+                    if (!line) return;
+                    const lines = line;
+                    setLines((prev) => {
+                        const newLines = [...prev];
+                        lines.forEach(line => {
+                            if (!newLines.some(l => l.id === line.id)) newLines.push(line); // check if not duplicate
+                        })
+                        return reorderLines(newLines)
+                    })
                 }
                 
                 else {
@@ -106,7 +129,6 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                         return reorderLines(newLines);
                     });
                 }
-                onShapeUpdate(lineId); // same as above
             });
 
             sock.on('board:draw:redo', (data_payload) => {
@@ -119,7 +141,7 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                     });
                 }
 
-                else if (op === 'rotate') {
+                else if (op === 'rotate' || op === 'drag') {
                     if (!line) return;
                     const { newLine } = line;
                     setLines((prev) => {
@@ -130,7 +152,13 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                             return l;
                         });
                     });
-                    onShapeUpdate(line.id);
+                    onShapeUpdate(lineId);
+                }
+
+                else if (op === 'group_erase') {
+                    if (!line) return;
+                    const lines = line;
+                    setLines((prev) => prev.filter((l) => !lines.some(line => line.id === l.id)))
                 }
 
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));

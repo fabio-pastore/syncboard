@@ -4,7 +4,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, MessageCircle, Users, Share2, X, Send, User } from "lucide-react";
 import { useAuth } from '../context/AuthContext';
 
-import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN } from "../utils/boardConstants";
+import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT } from "../utils/boardConstants";
 import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, lineIntersectsOrInsidePolygon, computeSelectionBBox, translatePoints} from "../utils/boardUtils";
 import useSocket from "../hooks/useSocket";
 import useExport from "../hooks/useExport";
@@ -66,6 +66,7 @@ export default function Board({ shared = false }) {
 
     const selectionLassoRef = useRef(null);
     const dragStartRef = useRef(null);
+    const linesBeforeDragRef = useRef([]);
 
     const selectedIdsRef = useRef([]);
     const selectionLassoDataRef = useRef(null);
@@ -127,21 +128,39 @@ export default function Board({ shared = false }) {
     useEffect(() => {
     const onKeyDown = (e) => {
         if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
-            selectedIds.forEach(id => {
-                const lineId = id;
-                const lineData = linesRef.current?.find(l => l.id === lineId);
-                if (lineData) {
-                    setEditHistory((prev) => {
-                        if (prev.history.slice(0, prev.editIndex + 1).some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
-                        let newHistory;
-                        if (prev.history.length < NUM_MAX_UNDO) {
-                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lineData, op: "erase" }];
-                        } else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: lineData, op: "erase" }];
-                        return { history: newHistory, editIndex: newHistory.length - 1 };
+            const linesToErase = selectedIds.map(id => linesRef.current?.find(l => l.id === id))
+
+            if (linesToErase.length > 0) {
+                setEditHistory((prev) => {
+                    const currentHistory = prev.history.slice(0, prev.editIndex + 1);
+        
+                    const currentErasedSignature = linesToErase.map(l => l.id).sort().join(',');
+
+                    const isDuplicate = currentHistory.some(item => {
+                        if (item.op !== 'group_erase') return false;
+                        
+                        const historyItemSignature = item.lines.map(l => l.id).sort().join(',');
+                        return historyItemSignature === currentErasedSignature;
                     });
-                    socketRef.current?.emit('board:draw:erase', lineId);
-                }
-            });
+
+                    if (isDuplicate) return prev; // check for duplicated group erases and don't add the current one if it is a duplicate
+
+                    let newHistory;
+
+                    if (prev.history.length < NUM_MAX_UNDO) {
+                        newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
+                    } else {
+                        newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
+                    }
+                    
+                    return { history: newHistory, editIndex: newHistory.length - 1 };
+                });
+
+                const erasedIds = linesToErase.map(l => l.id);
+                socketRef.current?.emit('board:draw:group_erase', erasedIds);
+
+            }
+
             setLines(prev => prev.filter(l => !selectedIds.includes(l.id)));
             clearSelection();
         }
@@ -267,6 +286,7 @@ export default function Board({ shared = false }) {
                     if (pos.x >= selectionBBoxRef.current.x && pos.x <= selectionBBoxRef.current.x + selectionBBoxRef.current.width &&
                         pos.y >= selectionBBoxRef.current.y && pos.y <= selectionBBoxRef.current.y + selectionBBoxRef.current.height) {
                             setIsDraggingSelection(true);
+                            linesBeforeDragRef.current = [...linesRef.current]; // save lines before drag to restore them later on with undo
                             isDraggingSelectionRef.current = true;
                             dragStartRef.current = { x: pos.x, y: pos.y };
                             return;
@@ -550,10 +570,20 @@ export default function Board({ shared = false }) {
                 setIsDraggingSelection(false);
                 isDraggingSelectionRef.current = false;
                 dragStartRef.current = null;
-                // socket
+                const prevLines = linesBeforeDragRef.current;
                 selectedIdsRef.current.forEach(id => {
-                  socketRef.current?.emit('board:draw:line', linesRef.current?.find(l => l.id === id));  
-                });
+                    const newLineData = linesRef.current?.find(l => l.id === id);
+                    const oldLineData = linesBeforeDragRef.current?.find(l => l.id === id);
+                    if (oldLineData) {
+                        setEditHistory((prev) => {
+                            let newHistory;
+                            if (prev.history.length < NUM_MAX_UNDO) {
+                                newHistory = [...prev.history.slice(0, prev.editIndex + 1), { prev_line: oldLineData, new_line: newLineData, op: "drag" }];
+                            } else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { prev_line: oldLineData, new_line: newLineData, op: "drag"}];
+                            return { history: newHistory, editIndex: newHistory.length - 1 };
+                        });  
+                    socketRef.current?.emit('board:draw:line', newLineData);
+                }});
                 return;
             }
 
@@ -669,7 +699,7 @@ export default function Board({ shared = false }) {
                 socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw' });
             } 
             
-            else if (last_edit.op === 'rotate') {
+            else if (last_edit.op === 'rotate' || last_edit.op === 'drag') {
                 setLines((prev) => {
                     return prev.map(l => {
                         if (l.id === last_edit.prev_line.id) {
@@ -679,7 +709,22 @@ export default function Board({ shared = false }) {
                     });
                 });
                 clearSelection();
-                socketRef.current?.emit('board:draw:undo', {lineId: last_edit.prev_line.id, op: 'rotate', line: {prevLine: last_edit.prev_line, newLine: last_edit.new_line}});
+                socketRef.current?.emit('board:draw:undo', {
+                                        lineId: last_edit.prev_line.id, 
+                                        op: (last_edit.op === 'rotate') ? 'rotate' : 'drag', 
+                                        line: {prevLine: last_edit.prev_line, newLine: last_edit.new_line}
+                                    });
+            }
+
+            else if (last_edit.op === 'group_erase') {
+                setLines((prevLines) => {
+                    if (prevLines.some(l => last_edit.lines.some(line => l.id === line.id))) return prevLines;
+                    const newLines = [...prevLines, ...last_edit.lines];
+                    return sortLinesByTime(newLines)
+                });
+                socketRef.current?.emit('board:draw:undo', { op: 'group_erase', line: last_edit.lines }); 
+                // we keep this attribute as "line" and not "lines" since it is what the socket expects, we then deal with this particular case
+                // directly in useSocket.js by checking whether the operation is a "group_erase"
             }
 
             else {
@@ -710,7 +755,7 @@ export default function Board({ shared = false }) {
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw', line: last_edit.line });
             } 
             
-            else if (last_edit.op === 'rotate') {
+            else if (last_edit.op === 'rotate' || last_edit.op === 'drag') {
                 setLines((prev) => {
                     return prev.map(l => {
                         if (l.id === last_edit.new_line.id) {
@@ -720,7 +765,17 @@ export default function Board({ shared = false }) {
                     });
                 });
                 clearSelection();
-                socketRef.current?.emit('board:draw:redo', {lineId: last_edit.prev_line.id, op: 'rotate', line: {prevLine: last_edit.prev_line, newLine: last_edit.new_line}});
+                socketRef.current?.emit('board:draw:redo', {
+                                        lineId: last_edit.prev_line.id, 
+                                        op: (last_edit.op === 'rotate') ? 'rotate' : 'drag', 
+                                        line: {prevLine: last_edit.prev_line, newLine: last_edit.new_line}
+                                    });
+            }
+
+            else if (last_edit.op === 'group_erase') {
+                setLines((prevLines) => prevLines.filter(l => !last_edit.lines.some(line => l.id === line.id)));
+                socketRef.current?.emit('board:draw:redo', { op: 'group_erase', line: last_edit.lines });
+                // same as "group_erase" case in handleUndo() 
             }
             
             else {
@@ -955,6 +1010,15 @@ export default function Board({ shared = false }) {
         });
 
     }, []);
+
+    const handleExitAndSaveThumbnail = () => {
+    clearSelection();
+
+    setTimeout(() => {
+        saveThumbnail();
+        navigate('/');
+    }, WAIT_BEFORE_EXIT); 
+};
 
     return (
         <div className="h-screen overflow-hidden relative bg-white" style={{ height: '100dvh' }} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}>
@@ -1272,7 +1336,7 @@ export default function Board({ shared = false }) {
             />
 
             <div className="fixed top-2 left-2 flex items-center gap-2 pointer-events-auto z-10">
-                <button onClick={() => { navigate('/'); saveThumbnail(); }} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900">
+                <button onClick={handleExitAndSaveThumbnail} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900">
                     <ArrowLeft size={14} />
                 </button>
                 <div className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-900 font-medium shadown-sm max-w-xs truncate">
