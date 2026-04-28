@@ -115,7 +115,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('board:draw:line', async(line) => {
+    socket.on('board:draw:line', async (line) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:line', line);
@@ -123,20 +123,38 @@ io.on('connection', (socket) => {
         await Board.updateOne({ _id: roomId }, { $push: { content: line } });
     });
 
-    socket.on('board:draw:tmpline', async(line) => {
+    socket.on('board:draw:tmpline', async (line) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:line', line);
     });
 
-    socket.on('board:draw:erase', async(lineId) => {
+    socket.on('board:draw:erase', async (lineId) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:erase', lineId);
         await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } });
     });
 
-    socket.on('board:draw:group_erase', async(erasedIds) => {
+    socket.on('board:draw:group_drag', async (draggedLines) => {
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:draw:group_drag', draggedLines);
+        const oldLineIds = draggedLines.map(line => line.id);
+        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: oldLineIds } } } });
+        await Board.updateOne({ _id: roomId }, { $push: { content: { $each: draggedLines } } });
+    })
+
+    socket.on('board:draw:group_rotate', async (rotatedLines) => {
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:draw:group_rotate', rotatedLines);
+        const oldLineIds = rotatedLines.map(line => line.id);
+        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: oldLineIds } } } });
+        await Board.updateOne({ _id: roomId }, { $push: { content: { $each: rotatedLines } } });
+    })
+    
+    socket.on('board:draw:group_erase', async (erasedIds) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:group_erase', erasedIds);
@@ -152,12 +170,14 @@ io.on('connection', (socket) => {
             await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } });
         } 
         
-        else if (op === 'rotate' || op === 'drag') {
-            socket.to(roomId).emit('board:draw:undo', { lineId, op, line });
+        else if (op === 'rotate' || op === 'drag') { 
+            socket.to(roomId).emit('board:draw:undo', { op, line });
             if (!line) return;
-            const { prevLine, newLine } = line;
-            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: prevLine.id } } });
-            await Board.updateOne({ _id: roomId }, { $push: { content: prevLine } });
+            const line_pairs = line;
+            const prevLine = line_pairs.map(entry => entry.prev_line);
+            const newLineIds = line_pairs.map(entry => entry.new_line.id);
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: newLineIds } } } });
+            await Board.updateOne({ _id: roomId }, { $push: { content: { $each: prevLine } } });
         }
 
         else if (op === 'group_erase') {
@@ -183,11 +203,13 @@ io.on('connection', (socket) => {
         } 
         
         else if (op === 'rotate' || op === 'drag') {
-            socket.to(roomId).emit('board:draw:redo', { lineId, op, line });
+            socket.to(roomId).emit('board:draw:redo', { op, line });
             if (!line) return;
-            const { prevLine, newLine } = line;
-            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: prevLine.id } } });
-            await Board.updateOne({ _id: roomId }, { $push: { content: newLine } });
+            const line_pairs = line;
+            const oldLineIds = line_pairs.map(entry => entry.prev_line.id);
+            const newLines = line_pairs.map(entry => entry.new_line);
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: oldLineIds } } } });
+            await Board.updateOne({ _id: roomId }, { $push: { content: { $each: newLines } } });
         }
 
         else if (op === 'group_erase') {

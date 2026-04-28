@@ -128,7 +128,7 @@ export default function Board({ shared = false }) {
     useEffect(() => {
     const onKeyDown = (e) => {
         if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
-            const linesToErase = selectedIds.map(id => linesRef.current?.find(l => l.id === id))
+            const linesToErase = selectedIds.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean); // remove null
 
             if (linesToErase.length > 0) {
                 setEditHistory((prev) => {
@@ -286,7 +286,7 @@ export default function Board({ shared = false }) {
                     if (pos.x >= selectionBBoxRef.current.x && pos.x <= selectionBBoxRef.current.x + selectionBBoxRef.current.width &&
                         pos.y >= selectionBBoxRef.current.y && pos.y <= selectionBBoxRef.current.y + selectionBBoxRef.current.height) {
                             setIsDraggingSelection(true);
-                            linesBeforeDragRef.current = [...linesRef.current]; // save lines before drag to restore them later on with undo
+                            linesBeforeDragRef.current = linesRef.current?.map(line => ({...line})); // save lines before drag to restore them later on with undo
                             isDraggingSelectionRef.current = true;
                             dragStartRef.current = { x: pos.x, y: pos.y };
                             return;
@@ -570,20 +570,44 @@ export default function Board({ shared = false }) {
                 setIsDraggingSelection(false);
                 isDraggingSelectionRef.current = false;
                 dragStartRef.current = null;
-                const prevLines = linesBeforeDragRef.current;
-                selectedIdsRef.current.forEach(id => {
+
+                const draggedLinesPairs = selectedIdsRef.current.map(id => {
                     const newLineData = linesRef.current?.find(l => l.id === id);
                     const oldLineData = linesBeforeDragRef.current?.find(l => l.id === id);
-                    if (oldLineData) {
-                        setEditHistory((prev) => {
-                            let newHistory;
-                            if (prev.history.length < NUM_MAX_UNDO) {
-                                newHistory = [...prev.history.slice(0, prev.editIndex + 1), { prev_line: oldLineData, new_line: newLineData, op: "drag" }];
-                            } else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { prev_line: oldLineData, new_line: newLineData, op: "drag"}];
-                            return { history: newHistory, editIndex: newHistory.length - 1 };
-                        });  
-                    socketRef.current?.emit('board:draw:line', newLineData);
-                }});
+                    
+                    if (!newLineData || !oldLineData) return null;
+
+                    const hasMovedX = newLineData.x !== oldLineData.x;
+                    const hasMovedY = newLineData.y !== oldLineData.y;
+
+                    const havePointCoordsMoved = newLineData.points && oldLineData.points &&
+                                                 (
+                                                    newLineData.points[0] !== oldLineData.points[0] ||
+                                                    newLineData.points[1] !== oldLineData.points[1]
+                                                 );
+                                              
+                    if (!hasMovedX && !hasMovedY && !havePointCoordsMoved) return null;
+
+                    return { prev_line: oldLineData, new_line: newLineData };
+                }).filter(Boolean);
+
+                if (draggedLinesPairs.length > 0) {
+                    setEditHistory((prev) => {
+                        let newHistory;
+
+                        if (prev.history.length < NUM_MAX_UNDO) {
+                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: draggedLinesPairs, op: "drag" }];
+                        } else {
+                            newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: draggedLinesPairs, op: "drag" }];
+                        }
+                        
+                        return { history: newHistory, editIndex: newHistory.length - 1 };
+                    });  
+
+                    const draggedLines = draggedLinesPairs.map(pair => pair.new_line);
+                    
+                    socketRef.current?.emit('board:draw:group_drag', draggedLines); 
+                }
                 return;
             }
 
@@ -702,17 +726,14 @@ export default function Board({ shared = false }) {
             else if (last_edit.op === 'rotate' || last_edit.op === 'drag') {
                 setLines((prev) => {
                     return prev.map(l => {
-                        if (l.id === last_edit.prev_line.id) {
-                            return last_edit.prev_line;
-                        }
-                        return l;
+                        const historyEntry = last_edit.lines.find(entry => entry.prev_line.id === l.id);  // does not matter which ID we check here (prev and new are the same)
+                        return historyEntry ? historyEntry.prev_line : l;
                     });
                 });
                 clearSelection();
                 socketRef.current?.emit('board:draw:undo', {
-                                        lineId: last_edit.prev_line.id, 
-                                        op: (last_edit.op === 'rotate') ? 'rotate' : 'drag', 
-                                        line: {prevLine: last_edit.prev_line, newLine: last_edit.new_line}
+                                        op: last_edit.op, 
+                                        line: last_edit.lines // pass all pairs <prev, new>
                                     });
             }
 
@@ -758,17 +779,14 @@ export default function Board({ shared = false }) {
             else if (last_edit.op === 'rotate' || last_edit.op === 'drag') {
                 setLines((prev) => {
                     return prev.map(l => {
-                        if (l.id === last_edit.new_line.id) {
-                            return last_edit.new_line;
-                        }
-                        return l;
+                        const historyEntry = last_edit.lines.find(entry => entry.new_line.id === l.id);  // either ID will do, as in handleUndo()
+                        return historyEntry ? historyEntry.new_line : l;
                     });
                 });
                 clearSelection();
                 socketRef.current?.emit('board:draw:redo', {
-                                        lineId: last_edit.prev_line.id, 
-                                        op: (last_edit.op === 'rotate') ? 'rotate' : 'drag', 
-                                        line: {prevLine: last_edit.prev_line, newLine: last_edit.new_line}
+                                        op: last_edit.op, 
+                                        line: last_edit.lines
                                     });
             }
 
@@ -981,33 +999,42 @@ export default function Board({ shared = false }) {
         linesRef.current = updatedLines;
         setLines(updatedLines);
 
-        selectedIdsRef.current.forEach(id => {
-            const lineId = id;
-            const newLineData = linesRef.current?.find(l => l.id === lineId);
-
+        const rotatedLinesPairs = selectedIdsRef.current.map(id => {
+            const newLineData = linesRef.current?.find(l => l.id === id);
             const initialLineData = initialLinesRotRef.current?.[id];
-            const fallbackLineData = currLines.find(l => l.id === id);
             
-            const oldLineData = { // save line data prior to rotation to restore it in case of undo, we later pass this data to setHistory()
+            const fallbackLineData = currLines.find(l => l.id === id); 
+            
+            if (!newLineData || !fallbackLineData) return null;
+
+            const oldLineData = {
                 ...fallbackLineData,
                 rotation: initialLineData ? initialLineData.rotation : 0,
                 x: initialLineData ? initialLineData.x : fallbackLineData.x,
                 y: initialLineData ? initialLineData.y : fallbackLineData.y,
                 offsetX: initialLineData ? initialLineData.offsetX : fallbackLineData.offsetX,
                 offsetY: initialLineData ? initialLineData.offsetY : fallbackLineData.offsetY
-            }
+            };
 
-            if (oldLineData) {
-                setEditHistory((prev) => {
-                    let newHistory;
-                    if (prev.history.length < NUM_MAX_UNDO) {
-                        newHistory = [...prev.history.slice(0, prev.editIndex + 1), { prev_line: oldLineData, new_line: newLineData, op: "rotate" }];
-                    } else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { prev_line: oldLineData, new_line: newLineData, op: "rotate"}];
-                    return { history: newHistory, editIndex: newHistory.length - 1 };
-                });  
-            }
-            socketRef.current?.emit('board:draw:line', newLineData);
-        });
+            return { prev_line: oldLineData, new_line: newLineData };
+        }).filter(Boolean); // remove null
+
+        if (rotatedLinesPairs.length > 0) {
+            setEditHistory((prev) => {
+                let newHistory;
+
+                if (prev.history.length < NUM_MAX_UNDO) {
+                    newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: rotatedLinesPairs, op: "rotate" }];
+                } else {
+                    newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: rotatedLinesPairs, op: "rotate" }];
+                }
+                
+                return { history: newHistory, editIndex: newHistory.length - 1 };
+            });
+
+            const rotatedLines = rotatedLinesPairs.map(pair => pair.new_line);
+            socketRef.current?.emit('board:draw:group_rotate', rotatedLines);
+        }
 
     }, []);
 

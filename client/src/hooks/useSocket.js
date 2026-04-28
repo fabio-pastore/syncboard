@@ -31,7 +31,8 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 } else {
                     boardData = await apiFetch(`/boards/${id}`);
                     setBoard(boardData);
-                    setLines(boardData.content || []);
+                    const boardContent = reorderLines(boardData.content || []);
+                    setLines(boardContent);
                 }
             } catch (error) {
                 console.error("Failed to fetch board data:", error);
@@ -82,12 +83,39 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 onShapeUpdate(lineId); // same as above
             });
 
+            sock.on('board:draw:group_drag', (draggedLines) => {
+                if (!draggedLines) return;
+                const lineIds = draggedLines.map(l => l.id);
+                setLines((prev) => {
+                    const newLines = prev.map((l) => {
+                        const line_entry = draggedLines.find(line => line.id === l.id);
+                        return line_entry ? line_entry : l;
+                    });
+                    return reorderLines(newLines);
+                })
+                lineIds.forEach(id => onShapeUpdate(id));
+            })
+
+            sock.on('board:draw:group_rotate', (rotatedLines) => {
+                if (!rotatedLines) return;
+                const lineIds = rotatedLines.map(l => l.id);
+                setLines((prev) => {
+                    const newLines = prev.map(l => {
+                        const line_entry = rotatedLines.find(line => line.id === l.id);
+                        return line_entry ? line_entry : l;
+                    });
+                    return reorderLines(newLines);
+                })
+                lineIds.forEach(id => onShapeUpdate(id));
+            })
+            
             sock.on('board:draw:group_erase', (erasedIds) => {
                 setLines((prev) => prev.filter((l) => !erasedIds.includes(l.id)));
                 erasedIds.forEach(lineId => {
                     onShapeUpdate(lineId);
                 });
             });
+
 
             sock.on('board:draw:undo', (data_payload) => {
                 if (!data_payload) return;
@@ -99,16 +127,16 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
 
                 else if (op === 'rotate' || op === 'drag') {
                     if (!line) return;
-                    const { prevLine } = line;
+                    const line_pairs = line;
+                    const lineIds = line_pairs.map(entry => entry.prev_line.id);
                     setLines((prev) => {
-                        return prev.map(l => {
-                            if (l.id === prevLine.id) {
-                                return prevLine;
-                            }
-                            return l;
+                        const newLines = prev.map(l => {
+                            const line_entry = line_pairs.find(entry => entry.prev_line.id === l.id);
+                            return line_entry ? line_entry.prev_line : l;
                         });
+                        return reorderLines(newLines);
                     });
-                    onShapeUpdate(line.id);
+                    lineIds.forEach(id => onShapeUpdate(id));
                 }
 
                 else if (op === 'group_erase') {
@@ -143,16 +171,16 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
 
                 else if (op === 'rotate' || op === 'drag') {
                     if (!line) return;
-                    const { newLine } = line;
+                    const line_pairs = line;
+                    const lineIds = line_pairs.map(entry => entry.new_line.id);
                     setLines((prev) => {
-                        return prev.map(l => {
-                            if (l.id === newLine.id) {
-                                return newLine;
-                            }
-                            return l;
+                        const newLines = prev.map(l => {
+                            const line_entry = line_pairs.find(entry => entry.new_line.id === l.id);
+                            return line_entry ? line_entry.new_line : l;
                         });
+                        return reorderLines(newLines);
                     });
-                    onShapeUpdate(lineId);
+                    lineIds.forEach(id => onShapeUpdate(id));
                 }
 
                 else if (op === 'group_erase') {
