@@ -71,6 +71,7 @@ export default function Board({ shared = false }) {
     const selectionLassoDataRef = useRef(null);
     const selectionBBoxRef = useRef(null);
     const isDraggingSelectionRef = useRef(false);
+    const isRotatingRef = useRef(false);
     const dragStartAngleRef = useRef(0);
     const lastAngleRef = useRef(0);
     const cumulativeDeltaRef = useRef(0);
@@ -151,7 +152,7 @@ export default function Board({ shared = false }) {
 
     const { touchCountRef } = useTouchHandlers({
         stageRef, setScale,
-        isDrawingRef, activeLineRef, activeLineDataRef,
+        isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
         activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef,
     });
 
@@ -361,6 +362,13 @@ export default function Board({ shared = false }) {
     }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity]);
 
     const handlePointerMove = useCallback((e) => {
+
+        if (isRotatingRef.current) {
+            if (e.evt.preventDefault) e.evt.preventDefault();
+            handleRotationDrag(e);
+            return;
+        }
+
         if (isPanningRef.current) {
             const newPos = {
                 x: e.evt.clientX - panStartRef.current.x,
@@ -517,7 +525,14 @@ export default function Board({ shared = false }) {
         }
     }, [canDraw]);
 
-    const handlePointerUp = useCallback(() => {
+    const handlePointerUp = useCallback((e) => {
+
+        if (isRotatingRef.current) {
+            isRotatingRef.current = false;
+            handleRotationEnd(e);
+            return;
+        }
+
         isPenActiveRef.current = false;
         if (isPanningRef.current) {
             isPanningRef.current = false;
@@ -773,9 +788,13 @@ export default function Board({ shared = false }) {
         messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" });
     };
 
-    const handleRotationStart = (e) => {        
-        const centerX = selectionBBox.x + selectionBBox.width / 2;
-        const centerY = selectionBBox.y + selectionBBox.height / 2;
+    const handleRotationStart = (e) => { 
+        
+        const currSelectionBBox = selectionBBoxRef.current;
+        if (!currSelectionBBox) return;
+
+        const centerX = currSelectionBBox.x + currSelectionBBox.width / 2;
+        const centerY = currSelectionBBox.y + currSelectionBBox.height / 2;
         const stage = e.target.getStage();
         
         const pointerPos = stage.getPointerPosition();
@@ -803,9 +822,13 @@ export default function Board({ shared = false }) {
         initialLinesRotRef.current = initialData;
     }
 
-    const handleRotationDrag = (e) => {                 
-        const centerX = selectionBBox.x + selectionBBox.width / 2;
-        const centerY = selectionBBox.y + selectionBBox.height / 2;
+    const handleRotationDrag = (e) => {
+        
+        const currSelectionBBox = selectionBBoxRef.current;
+        if (!currSelectionBBox) return;
+
+        const centerX = currSelectionBBox.x + currSelectionBBox.width / 2;
+        const centerY = currSelectionBBox.y + currSelectionBBox.height / 2;
         const stage = e.target.getStage();
         
         const pointerPos = stage.getPointerPosition();
@@ -1191,15 +1214,24 @@ export default function Board({ shared = false }) {
                                 x={selectionBBox.x + selectionBBox.width / 2} 
                                 y={selectionBBox.y - 25}
                                 listening={true}
-                                draggable={true}
-
-                                dragBoundFunc={function(pos) {return this.absolutePosition();}} // this is done to maintain draggable object in-place during dragging
 
                                 onMouseEnter={(e) => { e.target.getStage().container().style.cursor = 'grab'; }}
                                 onMouseLeave={(e) => { e.target.getStage().container().style.cursor = 'default'; }}
-                                onDragStart={(e) => {handleRotationStart(e)}}
-                                onDragMove={(e) => {handleRotationDrag(e)}}
-                                onDragEnd={handleRotationEnd}
+
+                                onPointerDown={(e) => { 
+                                    e.cancelBubble = true;
+                                    e.evt.preventDefault(); 
+                                    isRotatingRef.current = true;
+                                    handleRotationStart(e);
+                                }}
+
+                                onTouchStart={(e) => {
+                                    e.cancelBubble = true;
+                                    e.evt.preventDefault(); 
+                                    isRotatingRef.current = true;
+                                    handleRotationStart(e);
+                                }}
+
                             >
                                 <Circle 
                                     x={0} 
