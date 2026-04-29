@@ -10,6 +10,7 @@ export default function useTouchHandlers({
     activeCircleFillRef,
     isPenActiveRef,
     isRotatingRef,
+    isResizingRef,
 }) {
     const touchCountRef = useRef(0);
     const lastTouchCenterRef = useRef(null);
@@ -20,7 +21,7 @@ export default function useTouchHandlers({
         if (!container) return;
 
         const handleTouchStart = (e) => {
-            if (isRotatingRef.current) return;
+            if (isRotatingRef.current || isResizingRef.current) return;
             if (isPenActiveRef.current) return;
             const fingers = e.touches.length;
             touchCountRef.current = fingers;
@@ -45,7 +46,7 @@ export default function useTouchHandlers({
         };
 
         const handleTouchMove = (e) => {
-            if (isRotatingRef.current) return;
+            if (isRotatingRef.current || isResizingRef.current) return;
             if (isPenActiveRef.current) return;
             e.preventDefault();
             const fingers = e.touches.length;
@@ -91,7 +92,7 @@ export default function useTouchHandlers({
         };
 
         const handleTouchEnd = (e) => {
-            if (isRotatingRef.current) return;
+            if (isRotatingRef.current || isResizingRef.current) return;
             if (isPenActiveRef.current) return;
             const fingers = e.touches.length;
             touchCountRef.current = fingers;

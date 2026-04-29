@@ -92,9 +92,9 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                         return line_entry ? line_entry : l;
                     });
                     return reorderLines(newLines);
-                })
+                });
                 lineIds.forEach(id => onShapeUpdate(id));
-            })
+            });
 
             sock.on('board:draw:group_rotate', (rotatedLines) => {
                 if (!rotatedLines) return;
@@ -105,9 +105,22 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                         return line_entry ? line_entry : l;
                     });
                     return reorderLines(newLines);
-                })
+                });
                 lineIds.forEach(id => onShapeUpdate(id));
-            })
+            });
+
+            sock.on('board:draw:group_resize', (resizedLines) => {
+                if (!resizedLines) return;
+                const lineIds = resizedLines.map(l => l.id);
+                setLines((prev) => {
+                    const newLines = prev.map(l => {
+                        const line_entry = resizedLines.find(line => line.id === l.id);
+                        return line_entry ? line_entry : l;
+                    });
+                    return reorderLines(newLines);
+                });
+                lineIds.forEach(id => onShapeUpdate(id));
+            });
             
             sock.on('board:draw:group_erase', (erasedIds) => {
                 setLines((prev) => prev.filter((l) => !erasedIds.includes(l.id)));
@@ -125,7 +138,7 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                     onShapeUpdate(lineId);
                 }
 
-                else if (op === 'rotate' || op === 'drag') {
+                else if (op === 'rotate' || op === 'drag' || op === 'resize') {
                     if (!line) return;
                     const line_pairs = line;
                     const lineIds = line_pairs.map(entry => entry.prev_line.id);
@@ -169,7 +182,7 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                     });
                 }
 
-                else if (op === 'rotate' || op === 'drag') {
+                else if (op === 'rotate' || op === 'drag' || op === 'resize') {
                     if (!line) return;
                     const line_pairs = line;
                     const lineIds = line_pairs.map(entry => entry.new_line.id);

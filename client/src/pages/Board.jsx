@@ -3,9 +3,10 @@ import { Stage, Layer, Line, Circle, Rect, Text, Group } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, MessageCircle, Users, Share2, X, Send, User } from "lucide-react";
 import { useAuth } from '../context/AuthContext';
-
-import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT } from "../utils/boardConstants";
-import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, lineIntersectsOrInsidePolygon, computeSelectionBBox, translatePoints} from "../utils/boardUtils";
+import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
+         HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT } from "../utils/boardConstants";
+import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, 
+         lineIntersectsOrInsidePolygon, computeSelectionBBox, rotatePoint, translatePoints } from "../utils/boardUtils";
 import useSocket from "../hooks/useSocket";
 import useExport from "../hooks/useExport";
 import useTouchHandlers from "../hooks/useTouchHandlers";
@@ -43,7 +44,7 @@ export default function Board({ shared = false }) {
     const SELECTION_BOX_COLOR = "#3b82f6"
     const [selectedIds, setSelectedIds] = useState([]);
     const [selectionLasso, setSelectionLasso] = useState(null);
-    const [selectionBBox, setSelectionBBox] = useState(null); // BB = bounding box
+    const [selectionBBox, setSelectionBBox] = useState(null);
     const [selectionBBoxRotation, setSelectionBBoxRotation] = useState(0);
     const [isDraggingSelection, setIsDraggingSelection] = useState(false);
 
@@ -72,12 +73,17 @@ export default function Board({ shared = false }) {
     const selectionLassoDataRef = useRef(null);
     const selectionBBoxRef = useRef(null);
     const isDraggingSelectionRef = useRef(false);
+    
     const isRotatingRef = useRef(false);
     const dragStartAngleRef = useRef(0);
-    const lastAngleRef = useRef(0);
-    const cumulativeDeltaRef = useRef(0);
     const initialBoxRotRef = useRef(0);
-    const initialLinesRotRef = useRef({});
+    const linesBeforeRotateRef = useRef([]);
+
+    const isResizingRef = useRef(false);
+    const activeResizeHandleRef = useRef(null);
+    const initialBBoxRef = useRef(null);
+    const linesBeforeResizeRef = useRef([]);
+
     useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
     useEffect(() => {selectionBBoxRef.current = selectionBBox}, [selectionBBox]);
@@ -104,86 +110,69 @@ export default function Board({ shared = false }) {
     }, []);
 
     const handleOtherClientEdit = useCallback((shapeId) => {
-    if (selectedIdsRef.current.includes(shapeId)) {
-        clearSelection();
-    }
-}, [clearSelection]);
+        if (selectedIdsRef.current.includes(shapeId)) clearSelection();
+    }, [clearSelection]);
 
     const sortLinesByTime = (linesArray) => {
-            return [...linesArray].sort((x, y) => {
-                const timeX = parseInt(x.id.split('_')[0], 10);
-                const timeY = parseInt(y.id.split('_')[0], 10);
-                return timeX - timeY;
-            });
-        };
+        return [...linesArray].sort((x, y) => {
+            const timeX = parseInt(x.id.split('_')[0], 10);
+            const timeY = parseInt(y.id.split('_')[0], 10);
+            return timeX - timeY;
+        });
+    };
 
-    const reorderLines = useCallback((lines) => sortLinesByTime(lines), [sortLinesByTime])
+    const reorderLines = useCallback((lines) => sortLinesByTime(lines), []);
 
     const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, 
-            role, error, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines: reorderLines });
+            role, error, setError, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
     useEffect(() => { shapeRef.current = shape }, [shape]);
+
     useEffect(() => {
-    const onKeyDown = (e) => {
-        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
-            const linesToErase = selectedIds.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean); // remove null
-
-            if (linesToErase.length > 0) {
-                setEditHistory((prev) => {
-                    const currentHistory = prev.history.slice(0, prev.editIndex + 1);
-        
-                    const currentErasedSignature = linesToErase.map(l => l.id).sort().join(',');
-
-                    const isDuplicate = currentHistory.some(item => {
-                        if (item.op !== 'group_erase') return false;
-                        
-                        const historyItemSignature = item.lines.map(l => l.id).sort().join(',');
-                        return historyItemSignature === currentErasedSignature;
+        const onKeyDown = (e) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
+                const linesToErase = selectedIds.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean);
+                if (linesToErase.length > 0) {
+                    setEditHistory((prev) => {
+                        const currentHistory = prev.history.slice(0, prev.editIndex + 1);
+                        const currentErasedSignature = linesToErase.map(l => l.id).sort().join(',');
+                        const isDuplicate = currentHistory.some(item => {
+                            if (item.op !== 'group_erase') return false;
+                            return item.lines.map(l => l.id).sort().join(',') === currentErasedSignature;
+                        });
+                        if (isDuplicate) return prev; 
+                        let newHistory;
+                        if (prev.history.length < NUM_MAX_UNDO) {
+                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
+                        } else {
+                            newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
+                        }
+                        return { history: newHistory, editIndex: newHistory.length - 1 };
                     });
-
-                    if (isDuplicate) return prev; // check for duplicated group erases and don't add the current one if it is a duplicate
-
-                    let newHistory;
-
-                    if (prev.history.length < NUM_MAX_UNDO) {
-                        newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
-                    } else {
-                        newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
-                    }
-                    
-                    return { history: newHistory, editIndex: newHistory.length - 1 };
-                });
-
-                const erasedIds = linesToErase.map(l => l.id);
-                socketRef.current?.emit('board:draw:group_erase', erasedIds);
-
+                    const erasedIds = linesToErase.map(l => l.id);
+                    socketRef.current?.emit('board:draw:group_erase', erasedIds);
+                }
+                setLines(prev => prev.filter(l => !selectedIds.includes(l.id)));
+                clearSelection();
             }
-
-            setLines(prev => prev.filter(l => !selectedIds.includes(l.id)));
-            clearSelection();
-        }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-}, [selectedIds]);
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [selectedIds]);
 
     const { touchCountRef } = useTouchHandlers({
-        stageRef, setScale,
-        isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
-        activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef,
+        stageRef, setScale, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
+        activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef, isResizingRef
     });
 
-    const { exportToPng, exportToPDF, saveThumbnail } = useExport({
-        stageRef, linesRef, lines, board, id, shared,
-    });
+    const { exportToPng, exportToPDF, saveThumbnail } = useExport({ stageRef, linesRef, lines, board, id, shared });
 
     const canDraw = (role === 'editor');
+
     useEffect(() => {
-        function onResize() {
-            setStageSize({ width: window.innerWidth, height: window.innerHeight });
-        }
+        function onResize() { setStageSize({ width: window.innerWidth, height: window.innerHeight }); }
         window.addEventListener("resize", onResize);
         return () => window.removeEventListener("resize", onResize);
     }, []);
@@ -202,12 +191,300 @@ export default function Board({ shared = false }) {
     useEffect(() => {
         toolRef.current = tool;
         if (tool !== 'select') clearSelection();
-    }, [tool]);
+    }, [tool, clearSelection]);
+
+    const handleDragMove = (pointerPos, pointerScale) => {
+        const stage = stageRef.current;
+        const pos = {
+            x: (pointerPos.x - stage.x()) / pointerScale,
+            y: (pointerPos.y - stage.y()) / pointerScale,
+        };
+        const dx = pos.x - dragStartRef.current.x;
+        const dy = pos.y - dragStartRef.current.y;
+        dragStartRef.current = { x: pos.x, y: pos.y };
+
+        setLines(prev => {
+            const updated = prev.map(l => {
+                if (!selectedIdsRef.current.includes(l.id)) return l;
+                const newPoints = translatePoints(l.points, dx, dy);
+                return {
+                    ...l, 
+                    points: newPoints,
+                    x: l.x !== undefined ? l.x + dx : undefined,
+                    y: l.y !== undefined ? l.y + dy : undefined,
+                    offsetX: l.offsetX !== undefined ? l.offsetX + dx : undefined,
+                    offsetY: l.offsetY !== undefined ? l.offsetY + dy : undefined
+                };
+            });
+            linesRef.current = updated;
+            return updated;
+        });
+
+        setSelectionBBox(prev => prev ? {
+            ...prev, 
+            x: prev.x + dx, 
+            y: prev.y + dy,
+            globalCenterX: prev.globalCenterX !== undefined ? prev.globalCenterX + dx : undefined,
+            globalCenterY: prev.globalCenterY !== undefined ? prev.globalCenterY + dy : undefined
+        } : null);
+    };
+
+    const handleRotationStart = (e) => { 
+        const currSelectionBBox = selectionBBoxRef.current;
+        if (!currSelectionBBox) return;
+
+        const stage = stageRef.current;
+        const scale = stage.scaleX() || 1;
+        const pointerPos = stage.getPointerPosition();
+        const virtualX = (pointerPos.x - stage.x()) / scale;
+        const virtualY = (pointerPos.y - stage.y()) / scale;
+        
+        const centerX = currSelectionBBox.globalCenterX !== undefined ? currSelectionBBox.globalCenterX : currSelectionBBox.x + currSelectionBBox.width / 2;
+        const centerY = currSelectionBBox.globalCenterY !== undefined ? currSelectionBBox.globalCenterY : currSelectionBBox.y + currSelectionBBox.height / 2;
+        
+        dragStartAngleRef.current = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
+        initialBoxRotRef.current = selectionBBoxRotation || 0;
+        linesBeforeRotateRef.current = linesRef.current.map(l => ({...l, points: [...l.points]}));
+    };
+
+    const handleRotationDrag = (e) => {
+        const currBBox = selectionBBoxRef.current;
+        if (!currBBox) return;
+
+        const stage = stageRef.current;
+        const scale = stage.scaleX() || 1;
+        const pointerPos = stage.getPointerPosition();
+        const virtualX = (pointerPos.x - stage.x()) / scale;
+        const virtualY = (pointerPos.y - stage.y()) / scale;
+        
+        const centerX = currBBox.globalCenterX !== undefined ? currBBox.globalCenterX : currBBox.x + currBBox.width / 2;
+        const centerY = currBBox.globalCenterY !== undefined ? currBBox.globalCenterY : currBBox.y + currBBox.height / 2;
+        
+        const currentAngle = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
+        let deltaAngle = currentAngle - dragStartAngleRef.current;
+        
+        const newRotation = (initialBoxRotRef.current + deltaAngle) % 360;
+        setSelectionBBoxRotation(newRotation);
+
+        setLines(prev => prev.map(l => {
+            if (!selectedIdsRef.current.includes(l.id)) return l;
+            const originalLine = linesBeforeRotateRef.current.find(old => old.id === l.id);
+            if (!originalLine) return l;
+
+            const newPoints = new Array(originalLine.points.length);
+            for (let i = 0; i < originalLine.points.length; i += 2) {
+                const rotP = rotatePoint(originalLine.points[i], originalLine.points[i+1], centerX, centerY, deltaAngle);
+                newPoints[i] = rotP.x;
+                newPoints[i+1] = rotP.y;
+            }
+
+            let newX = originalLine.x, newY = originalLine.y;
+            let newOffsetX = originalLine.offsetX, newOffsetY = originalLine.offsetY;
+
+            if (originalLine.x !== undefined && originalLine.y !== undefined) {
+                const rotXY = rotatePoint(originalLine.x, originalLine.y, centerX, centerY, deltaAngle);
+                newX = rotXY.x;
+                newY = rotXY.y;
+            }
+            if (originalLine.offsetX !== undefined && originalLine.offsetY !== undefined) {
+                const rotOff = rotatePoint(originalLine.offsetX, originalLine.offsetY, centerX, centerY, deltaAngle);
+                newOffsetX = rotOff.x;
+                newOffsetY = rotOff.y;
+            }
+
+            return { ...l, points: newPoints, x: newX, y: newY, offsetX: newOffsetX, offsetY: newOffsetY };
+        }));
+    };
+
+    const handleRotationEnd = useCallback((e) => {
+        if (!selectionBBoxRef.current) return;
+        const rotatedLinesPairs = selectedIdsRef.current.map(id => {
+            const newLineData = linesRef.current?.find(l => l.id === id);
+            const oldLineData = linesBeforeRotateRef.current?.find(l => l.id === id);
+            if (!newLineData || !oldLineData) return null;
+            return { prev_line: oldLineData, new_line: newLineData };
+        }).filter(Boolean);
+
+        if (rotatedLinesPairs.length > 0) {
+            setEditHistory((prev) => {
+                let newHistory;
+                if (prev.history.length < NUM_MAX_UNDO) {
+                    newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: rotatedLinesPairs, op: "rotate" }];
+                } else {
+                    newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: rotatedLinesPairs, op: "rotate" }];
+                }
+                return { history: newHistory, editIndex: newHistory.length - 1 };
+            });
+            socketRef.current?.emit('board:draw:group_rotate', rotatedLinesPairs.map(p => p.new_line));
+        }
+    }, []);
+
+    const handleResizeStart = useCallback((e, current_handle) => {
+        e.cancelBubble = true;
+        e.evt.preventDefault();
+        isResizingRef.current = true;
+        activeResizeHandleRef.current = current_handle;
+        linesBeforeResizeRef.current = linesRef.current.map(l => ({...l, points: [...l.points]}));
+        initialBBoxRef.current = {...selectionBBoxRef.current};
+        initialBoxRotRef.current = selectionBBoxRotation || 0;
+    }, [selectionBBoxRotation]);
+
+    const handleResizeDrag = (pointerPos, pointerScale) => {
+        const stage = stageRef.current;
+        const handle = activeResizeHandleRef.current;
+        const initBBox = initialBBoxRef.current;
+        const rotationDeg = initialBoxRotRef.current;
+
+        const globalCx = initBBox.globalCenterX !== undefined ? initBBox.globalCenterX : initBBox.x + initBBox.width / 2;
+        const globalCy = initBBox.globalCenterY !== undefined ? initBBox.globalCenterY : initBBox.y + initBBox.height / 2;
+        
+        const rawMouse = {
+            x: (pointerPos.x - stage.x()) / pointerScale,
+            y: (pointerPos.y - stage.y()) / pointerScale
+        };
+
+        const localMouse = rotatePoint(rawMouse.x, rawMouse.y, globalCx, globalCy, -rotationDeg);
+
+        const localLeft = globalCx - initBBox.width / 2;
+        const localRight = globalCx + initBBox.width / 2;
+        const localTop = globalCy - initBBox.height / 2;
+        const localBottom = globalCy + initBBox.height / 2;
+
+        let newLocalLeft = localLeft;
+        let newLocalRight = localRight;
+        let newLocalTop = localTop;
+        let newLocalBottom = localBottom;
+
+        let anchorX, anchorY;
+        switch(handle) {
+            case HANDLE_TOP_LEFT: anchorX = localRight; anchorY = localBottom; break;
+            case HANDLE_TOP: anchorX = null; anchorY = localBottom; break;
+            case HANDLE_TOP_RIGHT: anchorX = localLeft; anchorY = localBottom; break;
+            case HANDLE_RIGHT: anchorX = localLeft; anchorY = null; break;
+            case HANDLE_BOTTOM_RIGHT: anchorX = localLeft; anchorY = localTop; break;
+            case HANDLE_BOTTOM: anchorX = null; anchorY = localTop; break;
+            case HANDLE_BOTTOM_LEFT: anchorX = localRight; anchorY = localTop; break;
+            case HANDLE_LEFT: anchorX = localRight; anchorY = null; break;
+        }
+
+        switch (handle) {
+            case HANDLE_TOP: newLocalTop = localMouse.y; break;
+            case HANDLE_RIGHT: newLocalRight = localMouse.x; break;
+            case HANDLE_BOTTOM: newLocalBottom = localMouse.y; break;
+            case HANDLE_LEFT: newLocalLeft = localMouse.x; break;
+        }
+
+        const isCornerHandle = [HANDLE_BOTTOM_RIGHT, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, HANDLE_BOTTOM_LEFT].includes(handle);
+        if (isCornerHandle) {
+            let diagX = 0, diagY = 0;
+            if (handle === HANDLE_BOTTOM_RIGHT) { diagX = initBBox.width; diagY = initBBox.height; }
+            else if (handle === HANDLE_TOP_LEFT) { diagX = -initBBox.width; diagY = -initBBox.height; }
+            else if (handle === HANDLE_TOP_RIGHT) { diagX = initBBox.width; diagY = -initBBox.height; }
+            else if (handle === HANDLE_BOTTOM_LEFT) { diagX = -initBBox.width; diagY = initBBox.height; }
+
+            const mx = localMouse.x - anchorX;
+            const my = localMouse.y - anchorY;
+
+            const dot = (mx * diagX) + (my * diagY);
+            const diagLengthSq = (diagX * diagX) + (diagY * diagY);
+            
+            const scaleFactor = diagLengthSq > 0 ? (dot / diagLengthSq) : 0;
+
+            const finalDx = diagX * scaleFactor;
+            const finalDy = diagY * scaleFactor;
+
+            if (handle === HANDLE_BOTTOM_RIGHT) {
+                newLocalLeft = anchorX; newLocalRight = anchorX + finalDx;
+                newLocalTop = anchorY; newLocalBottom = anchorY + finalDy;
+            } 
+            else if (handle === HANDLE_TOP_LEFT) {
+                newLocalRight = anchorX; newLocalLeft = anchorX + finalDx;
+                newLocalBottom = anchorY; newLocalTop = anchorY + finalDy;
+            } 
+            else if (handle === HANDLE_TOP_RIGHT) {
+                newLocalLeft = anchorX; newLocalRight = anchorX + finalDx;
+                newLocalBottom = anchorY; newLocalTop = anchorY + finalDy;
+            } 
+            else if (handle === HANDLE_BOTTOM_LEFT) {
+                newLocalRight = anchorX; newLocalLeft = anchorX + finalDx;
+                newLocalTop = anchorY; newLocalBottom = anchorY + finalDy;
+            }
+            else {}
+        }
+
+        const curWidth = newLocalRight - newLocalLeft;
+        const curHeight = newLocalBottom - newLocalTop;
+
+        const scaleX = initBBox.width > 0 ? curWidth / initBBox.width : 1;
+        const scaleY = initBBox.height > 0 ? curHeight / initBBox.height : 1;
+
+        const visualWidth = Math.abs(curWidth);
+        const visualHeight = Math.abs(curHeight);
+
+        const newLocalCx = (newLocalLeft + newLocalRight) / 2;
+        const newLocalCy = (newLocalTop + newLocalBottom) / 2;
+        const newGlobalCenter = rotatePoint(newLocalCx, newLocalCy, globalCx, globalCy, rotationDeg);
+
+        setSelectionBBox(prev => ({
+            ...prev,
+            x: newGlobalCenter.x - visualWidth / 2,
+            y: newGlobalCenter.y - visualHeight / 2,
+            width: visualWidth,
+            height: visualHeight,
+            globalCenterX: newGlobalCenter.x,
+            globalCenterY: newGlobalCenter.y
+        }));
+
+        setLines(prev => {
+            const updated = prev.map(l => {
+                if (!selectedIdsRef.current.includes(l.id)) return l;
+                const oldL = linesBeforeResizeRef.current.find(old => old.id === l.id);
+                if (!oldL) return l;
+
+                const newPoints = new Array(oldL.points.length);
+                for (let i = 0; i < oldL.points.length; i += 2) {
+                    const localP = rotatePoint(oldL.points[i], oldL.points[i+1], globalCx, globalCy, -rotationDeg);
+                    const scaledX = newLocalLeft + (localP.x - localLeft) * scaleX;
+                    const scaledY = newLocalTop + (localP.y - localTop) * scaleY;
+                    const globalP = rotatePoint(scaledX, scaledY, globalCx, globalCy, rotationDeg);
+                    
+                    newPoints[i] = globalP.x;
+                    newPoints[i+1] = globalP.y;
+                }
+
+                let newX = oldL.x, newY = oldL.y;
+                let newOffsetX = oldL.offsetX, newOffsetY = oldL.offsetY;
+
+                if (oldL.x !== undefined && oldL.y !== undefined) {
+                    const localCenter = rotatePoint(oldL.x, oldL.y, globalCx, globalCy, -rotationDeg);
+                    const scaledCx = newLocalLeft + (localCenter.x - localLeft) * scaleX;
+                    const scaledCy = newLocalTop + (localCenter.y - localTop) * scaleY;
+                    const globalCenterP = rotatePoint(scaledCx, scaledCy, globalCx, globalCy, rotationDeg);
+                    newX = globalCenterP.x;
+                    newY = globalCenterP.y;
+                }
+
+                if (oldL.offsetX !== undefined && oldL.offsetY !== undefined) {
+                    const localOff = rotatePoint(oldL.offsetX, oldL.offsetY, globalCx, globalCy, -rotationDeg);
+                    const scaledOffX = newLocalLeft + (localOff.x - localLeft) * scaleX;
+                    const scaledOffY = newLocalTop + (localOff.y - localTop) * scaleY;
+                    const globalOffP = rotatePoint(scaledOffX, scaledOffY, globalCx, globalCy, rotationDeg);
+                    newOffsetX = globalOffP.x;
+                    newOffsetY = globalOffP.y;
+                }
+
+                return { ...l, points: newPoints, x: newX, y: newY, offsetX: newOffsetX, offsetY: newOffsetY };
+            });
+            linesRef.current = updated;
+            return updated;
+        });
+    };
 
     const handlePointerDown = useCallback((e) => {
         if (isPanningRef.current) return;
-        if (e.target !== e.target.getStage() && e.target.name() !== 'selection-box' && !e.target.id()) return; // if we are using selectionBBox tools, ignore the event (except for the selection box itself)
+        if (e.target !== e.target.getStage() && e.target.name() !== 'selection-box' && !e.target.id()) return;
         if (e.evt.pointerType === 'touch' && touchCountRef.current >= 1) return;
+        
         if (e.evt.button === 1) {
             e.evt.preventDefault();
             isPanningRef.current = true;
@@ -220,6 +497,7 @@ export default function Board({ shared = false }) {
             if (eraserCursorRef.current) eraserCursorRef.current.style.display = 'none';
             return;
         }
+
         if (e.evt.pointerType === 'touch') return;
         if (!canDraw) return;
         if (e.evt.pointerType !== 'pen' && e.evt.button !== 0) return;
@@ -234,10 +512,7 @@ export default function Board({ shared = false }) {
         const pointerScale = stage.scaleX() || 1;
 
         if (toolRef.current === 'shape') {
-            const pos = {
-                x: (pointerPos.x - stage.x()) / pointerScale,
-                y: (pointerPos.y - stage.y()) / pointerScale,
-            };
+            const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
             newLine = {
                 id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
                 type: (shapeRef.current === 'circle') ? 'circle' : 'line',
@@ -276,31 +551,17 @@ export default function Board({ shared = false }) {
         }
         
         if (toolRef.current === 'select') {
-
-            if (e.target.name() === 'selection-box') {
-                if (selectionBBoxRef.current) {
-                    const pos = {
-                        x: (pointerPos.x - stage.x()) / pointerScale,
-                        y: (pointerPos.y - stage.y()) / pointerScale,
-                    }
-                    if (pos.x >= selectionBBoxRef.current.x && pos.x <= selectionBBoxRef.current.x + selectionBBoxRef.current.width &&
-                        pos.y >= selectionBBoxRef.current.y && pos.y <= selectionBBoxRef.current.y + selectionBBoxRef.current.height) {
-                            setIsDraggingSelection(true);
-                            linesBeforeDragRef.current = linesRef.current?.map(line => ({...line})); // save lines before drag to restore them later on with undo
-                            isDraggingSelectionRef.current = true;
-                            dragStartRef.current = { x: pos.x, y: pos.y };
-                            return;
-                        }
-                }
+            if (e.target.name() === 'selection-box' && selectionBBoxRef.current) {
+                const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
+                setIsDraggingSelection(true);
+                linesBeforeDragRef.current = linesRef.current?.map(line => ({...line, points: [...line.points]}));
+                isDraggingSelectionRef.current = true;
+                dragStartRef.current = { x: pos.x, y: pos.y };
+                return;
             }
-
             clearSelection();
             isDrawingRef.current = true;
-            const pos = { 
-                x: (pointerPos.x - stage.x()) / pointerScale,
-                y: (pointerPos.y - stage.y()) / pointerScale,
-            }
-            // setSelectionBBox([pos.x, pos.y]);
+            const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
             setSelectionLasso([pos.x, pos.y]);
             if (selectionLassoRef.current) {
                 selectionLassoRef.current.points([pos.x, pos.y]);
@@ -310,11 +571,7 @@ export default function Board({ shared = false }) {
             return;
         }
 
-        const pos = {
-            x: (pointerPos.x - stage.x()) / pointerScale,
-            y: (pointerPos.y - stage.y()) / pointerScale,
-        };
-
+        const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
         if (!newLine) {
             newLine = {
                 id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -355,9 +612,8 @@ export default function Board({ shared = false }) {
                     activeCircleFillRef.current.opacity(newLine.opacity);
                     activeCircleFillRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
                     activeCircleFillRef.current.show();
-                } else {
-                    activeCircleFillRef.current.hide();
-                }
+                } else activeCircleFillRef.current.hide();
+                
                 if (activeLineRef.current) activeLineRef.current.hide();
                 activeCircleStrokeRef.current.getLayer().batchDraw();
             }
@@ -379,9 +635,17 @@ export default function Board({ shared = false }) {
                 activeLineRef.current.getLayer().batchDraw();
             }
         }
-    }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity]);
+    }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity, clearSelection]);
 
     const handlePointerMove = useCallback((e) => {
+        const stage = stageRef.current;
+        const pointerPos = stage.getPointerPosition();
+        const pointerScale = stage.scaleX() || 1;
+
+        if (isResizingRef.current) {
+            handleResizeDrag(pointerPos, pointerScale);
+            return;
+        }
 
         if (isRotatingRef.current) {
             if (e.evt.preventDefault) e.evt.preventDefault();
@@ -398,6 +662,7 @@ export default function Board({ shared = false }) {
             stagePositionRef.current = newPos;
             return;
         }
+
         if (e.evt.pointerType === 'touch') return;
         if (!canDraw) return;
 
@@ -407,10 +672,6 @@ export default function Board({ shared = false }) {
         }
 
         if (!isDrawingRef.current) return;
-
-        const stage = stageRef.current;
-        const pointerPos = stage.getPointerPosition();
-        const pointerScale = stage.scaleX() || 1;
 
         if (toolRef.current === 'eraser') {
             const shape = stageRef.current.getIntersection(pointerPos);
@@ -435,37 +696,11 @@ export default function Board({ shared = false }) {
 
         if (toolRef.current === 'select') {
             if (isDraggingSelectionRef.current && dragStartRef.current) {
-                const pos = {
-                    x: (pointerPos.x - stage.x()) / pointerScale,
-                    y: (pointerPos.y - stage.y()) / pointerScale,
-                }
-                const dx = pos.x - dragStartRef.current.x;
-                const dy = pos.y - dragStartRef.current.y;
-                dragStartRef.current = { x: pos.x, y: pos.y };
-
-                setLines(prev => {
-                    const updated = prev.map(l => {
-                        if (!selectedIdsRef.current.includes(l.id)) return l;
-                        return {...l, 
-                                points: translatePoints(l.points, dx, dy),
-                                x: l.x !== undefined ? l.x + dx : undefined,
-                                y: l.y !== undefined ? l.y + dy : undefined,
-                                offsetX: l.offsetX !== undefined ? l.offsetX + dx : undefined,
-                                offsetY: l.offsetY !== undefined ? l.offsetY + dy : undefined
-                            };
-                    });
-                    linesRef.current = updated;
-                    return updated;
-                });
-                setSelectionBBox(prev => prev ? {...prev, x: prev.x + dx, y: prev.y + dy } : null);
+                handleDragMove(pointerPos, pointerScale);
                 return;
             }
             if (!isDrawingRef.current) return;
-            const pos = {
-                x: (pointerPos.x - stage.x()) / pointerScale,
-                y: (pointerPos.y - stage.y()) / pointerScale,
-            };
-
+            const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
             setSelectionLasso(prev => {
                 const u = prev ? [...prev, pos.x, pos.y] : [pos.x, pos.y];
                 if (selectionLassoRef.current) {
@@ -479,10 +714,7 @@ export default function Board({ shared = false }) {
 
         if (!activeLineDataRef.current) return;
 
-        const pos = {
-            x: (pointerPos.x - stage.x()) / pointerScale,
-            y: (pointerPos.y - stage.y()) / pointerScale,
-        };
+        const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
 
         if (toolRef.current === 'shape') {
             const start_x = activeLineDataRef.current.points[0];
@@ -505,18 +737,14 @@ export default function Board({ shared = false }) {
                     const lastY = pts[pts.length - 1];
                     const dx = pos_x - lastX;
                     const dy = pos_y - lastY;
-                    if (dx * dx + dy * dy >= minSpaceSq) {
-                        pts.push(pos_x, pos_y);
-                    }
+                    if (dx * dx + dy * dy >= minSpaceSq) pts.push(pos_x, pos_y);
                 }
             } else {
                 const lastX = pts[pts.length - 2];
                 const lastY = pts[pts.length - 1];
                 const dx = pos.x - lastX;
                 const dy = pos.y - lastY;
-                if (dx * dx + dy * dy >= minSpaceSq) {
-                    pts.push(pos.x, pos.y);
-                }
+                if (dx * dx + dy * dy >= minSpaceSq) pts.push(pos.x, pos.y);
             }
         }
 
@@ -543,9 +771,34 @@ export default function Board({ shared = false }) {
             socketRef.current?.emit('board:draw:tmpline', activeLineDataRef.current);
             setLastUpdate(now);
         }
-    }, [canDraw]);
+    }, [canDraw, handleResizeDrag, handleDragMove]);
 
     const handlePointerUp = useCallback((e) => {
+        if (isResizingRef.current) {
+            const resizedLinesPairs = selectedIdsRef.current.map(id => {
+                const newLineData = linesRef.current?.find(l => l.id === id);
+                const oldLineData = linesBeforeResizeRef.current?.find(l => l.id === id);
+                if (!newLineData || !oldLineData) return null;
+                if (JSON.stringify(newLineData) === JSON.stringify(oldLineData)) return null;
+                return { prev_line: oldLineData, new_line: newLineData };
+            }).filter(Boolean);
+
+            if (resizedLinesPairs.length > 0) {
+                setEditHistory((prev) => {
+                    let newHistory;
+                    const currentHistory = prev.history.slice(0, prev.editIndex + 1);
+                    if (currentHistory.length < NUM_MAX_UNDO) newHistory = [...currentHistory, { lines: resizedLinesPairs, op: "resize" }];
+                    else newHistory = [...currentHistory.slice(1), { lines: resizedLinesPairs, op: "resize" }];
+                    return { history: newHistory, editIndex: newHistory.length - 1 };
+                });
+                const resizedLines = resizedLinesPairs.map(pair => pair.new_line);
+                socketRef.current?.emit('board:draw:group_resize', resizedLines);
+            }
+
+            isResizingRef.current = false;
+            activeResizeHandleRef.current = null;
+            return;
+        }
 
         if (isRotatingRef.current) {
             isRotatingRef.current = false;
@@ -574,45 +827,28 @@ export default function Board({ shared = false }) {
                 const draggedLinesPairs = selectedIdsRef.current.map(id => {
                     const newLineData = linesRef.current?.find(l => l.id === id);
                     const oldLineData = linesBeforeDragRef.current?.find(l => l.id === id);
-                    
                     if (!newLineData || !oldLineData) return null;
-
                     const hasMovedX = newLineData.x !== oldLineData.x;
                     const hasMovedY = newLineData.y !== oldLineData.y;
-
                     const havePointCoordsMoved = newLineData.points && oldLineData.points &&
-                                                 (
-                                                    newLineData.points[0] !== oldLineData.points[0] ||
-                                                    newLineData.points[1] !== oldLineData.points[1]
-                                                 );
-                                              
+                                                 (newLineData.points[0] !== oldLineData.points[0] || newLineData.points[1] !== oldLineData.points[1]);
                     if (!hasMovedX && !hasMovedY && !havePointCoordsMoved) return null;
-
                     return { prev_line: oldLineData, new_line: newLineData };
                 }).filter(Boolean);
 
                 if (draggedLinesPairs.length > 0) {
                     setEditHistory((prev) => {
                         let newHistory;
-
-                        if (prev.history.length < NUM_MAX_UNDO) {
-                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: draggedLinesPairs, op: "drag" }];
-                        } else {
-                            newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: draggedLinesPairs, op: "drag" }];
-                        }
-                        
+                        if (prev.history.length < NUM_MAX_UNDO) newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: draggedLinesPairs, op: "drag" }];
+                        else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: draggedLinesPairs, op: "drag" }];
                         return { history: newHistory, editIndex: newHistory.length - 1 };
                     });  
-
-                    const draggedLines = draggedLinesPairs.map(pair => pair.new_line);
-                    
-                    socketRef.current?.emit('board:draw:group_drag', draggedLines); 
+                    socketRef.current?.emit('board:draw:group_drag', draggedLinesPairs.map(pair => pair.new_line)); 
                 }
                 return;
             }
 
-            isDrawingRef.current = false;
-            if (!selectionLassoDataRef.current || selectionLassoDataRef.current.length < 6) { // why six?  SEEEVEEEEEEEEN 
+            if (!selectionLassoDataRef.current || selectionLassoDataRef.current.length < 6) { 
                 clearSelection();
                 return;
             }
@@ -621,7 +857,17 @@ export default function Board({ shared = false }) {
             const selected = linesRef.current.filter(l => lineIntersectsOrInsidePolygon(l, lasso));
             const selectedIds = selected.map(l => l.id);
             setSelectedIds(selectedIds);
-            if (selectedIds.length > 0) setSelectionBBox(computeSelectionBBox(selected));
+            
+            if (selectedIds.length > 0) {
+                const rawBBox = computeSelectionBBox(selected);
+                setSelectionBBox({
+                    ...rawBBox,
+                    globalCenterX: rawBBox.x + rawBBox.width / 2,
+                    globalCenterY: rawBBox.y + rawBBox.height / 2
+                });
+                setSelectionBBoxRotation(0);
+            }
+            
             if (selectionLassoRef.current) {
                 selectionLassoRef.current.hide();
                 selectionLassoRef.current.getLayer().batchDraw();
@@ -646,7 +892,6 @@ export default function Board({ shared = false }) {
         setLines((prev) => [...prev, finishedLine]);
         linesRef.current = [...(linesRef.current || []), finishedLine];
        
-
         if (activeLineRef.current) {
             activeLineRef.current.hide();
             activeLineRef.current.getLayer().batchDraw();
@@ -661,14 +906,14 @@ export default function Board({ shared = false }) {
 
         setEditHistory((prev) => {
             let newHistory;
-            if (prev.history.length < NUM_MAX_UNDO) {
-                newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
-            } else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
+            if (prev.history.length < NUM_MAX_UNDO) newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
+            else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
             return { history: newHistory, editIndex: newHistory.length - 1 };
         });
 
         socketRef.current?.emit('board:draw:line', finishedLine);
-    }, []);
+    }, [clearSelection, handleRotationEnd]);
+
 
     const handlePointerEnter = useCallback(() => {
         if (eraserCursorRef.current && toolRef.current === 'eraser') {
@@ -722,21 +967,16 @@ export default function Board({ shared = false }) {
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
                 socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw' });
             } 
-            
-            else if (last_edit.op === 'rotate' || last_edit.op === 'drag') {
+            else if (last_edit.op === 'rotate' || last_edit.op === 'drag' || last_edit.op === 'resize') {
                 setLines((prev) => {
                     return prev.map(l => {
-                        const historyEntry = last_edit.lines.find(entry => entry.prev_line.id === l.id);  // does not matter which ID we check here (prev and new are the same)
+                        const historyEntry = last_edit.lines.find(entry => entry.prev_line.id === l.id); 
                         return historyEntry ? historyEntry.prev_line : l;
                     });
                 });
                 clearSelection();
-                socketRef.current?.emit('board:draw:undo', {
-                                        op: last_edit.op, 
-                                        line: last_edit.lines // pass all pairs <prev, new>
-                                    });
+                socketRef.current?.emit('board:draw:undo', { op: last_edit.op, line: last_edit.lines });
             }
-
             else if (last_edit.op === 'group_erase') {
                 setLines((prevLines) => {
                     if (prevLines.some(l => last_edit.lines.some(line => l.id === line.id))) return prevLines;
@@ -744,10 +984,7 @@ export default function Board({ shared = false }) {
                     return sortLinesByTime(newLines)
                 });
                 socketRef.current?.emit('board:draw:undo', { op: 'group_erase', line: last_edit.lines }); 
-                // we keep this attribute as "line" and not "lines" since it is what the socket expects, we then deal with this particular case
-                // directly in useSocket.js by checking whether the operation is a "group_erase"
             }
-
             else {
                 setLines((prevLines) => {
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
@@ -758,7 +995,7 @@ export default function Board({ shared = false }) {
             }
             return { history: prevHistory.history, editIndex: prevHistory.editIndex - 1 };
         });
-    }, []);
+    }, [clearSelection]);
 
     const handleRedo = useCallback(() => {
         setEditHistory((prevHistory) => {
@@ -769,67 +1006,54 @@ export default function Board({ shared = false }) {
                 setLines((prevLines) => {
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
                     const newLines = [...prevLines, last_edit.line];
-                    // since lines are drawn one above another on konva depending on the order in which they appear in the lines array, 
-                    // we must sort them by draw time before returning the updated array to maintaing the draw order on the canva
                     return sortLinesByTime(newLines) 
                 });
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw', line: last_edit.line });
             } 
-            
-            else if (last_edit.op === 'rotate' || last_edit.op === 'drag') {
+            else if (last_edit.op === 'rotate' || last_edit.op === 'drag' || last_edit.op === 'resize') {
                 setLines((prev) => {
                     return prev.map(l => {
-                        const historyEntry = last_edit.lines.find(entry => entry.new_line.id === l.id);  // either ID will do, as in handleUndo()
+                        const historyEntry = last_edit.lines.find(entry => entry.new_line.id === l.id); 
                         return historyEntry ? historyEntry.new_line : l;
                     });
                 });
                 clearSelection();
-                socketRef.current?.emit('board:draw:redo', {
-                                        op: last_edit.op, 
-                                        line: last_edit.lines
-                                    });
+                socketRef.current?.emit('board:draw:redo', { op: last_edit.op, line: last_edit.lines });
             }
-
             else if (last_edit.op === 'group_erase') {
                 setLines((prevLines) => prevLines.filter(l => !last_edit.lines.some(line => l.id === line.id)));
                 socketRef.current?.emit('board:draw:redo', { op: 'group_erase', line: last_edit.lines });
-                // same as "group_erase" case in handleUndo() 
             }
-            
             else {
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'erase' });
             }
             return { history: prevHistory.history, editIndex: prevHistory.editIndex + 1 };
         });
-    }, []);
+    }, [clearSelection]);
 
     useEffect(() => {
-    const handleUndoRedoShortcuts = (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        const handleUndoRedoShortcuts = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0; // this works apparently
-        const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
-        if (!cmdOrCtrl) return;
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+            if (!cmdOrCtrl) return;
 
-        if (e.key.toLowerCase() === 'z') {
-            e.preventDefault();
-            if (e.shiftKey) handleRedo(); // CTRL + Shift + Z
-            else handleUndo(); // CTRL + Z
-        }
-        else if (e.key.toLowerCase() === 'y') { 
-            e.preventDefault();
-            handleRedo(); // CTRL + Y
-        }
-        else {} // do nothing
-    };
+            if (e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) handleRedo();
+                else handleUndo();
+            }
+            else if (e.key.toLowerCase() === 'y') { 
+                e.preventDefault();
+                handleRedo();
+            }
+        };
 
-    window.addEventListener('keydown', handleUndoRedoShortcuts);
-
-    return () => {
-        window.removeEventListener('keydown', handleUndoRedoShortcuts); // remove listener on cleanup
-    };
-}, [handleUndo, handleRedo]);
+        window.addEventListener('keydown', handleUndoRedoShortcuts);
+        return () => window.removeEventListener('keydown', handleUndoRedoShortcuts);
+    }, [handleUndo, handleRedo]);
 
     const activeSize = (tool === 'eraser') ? eraserSize : (tool === 'highlighter') ? highlighterSize : (tool === 'shape') ? shapeWidth : strokeWidth;
     const setActiveSize = (fn) => {
@@ -843,9 +1067,7 @@ export default function Board({ shared = false }) {
     };
     const setColor = (fn) => (tool === 'highlighter') ? setHighlighterColor(fn) : setBrushColor(fn);
 
-    useEffect(() => {
-        scrollToBottom();
-    }, [chatMessages]);
+    useEffect(() => { scrollToBottom(); }, [chatMessages]);
 
     const sendMessage = () => {
         if (!inputMessageRef.current) return;
@@ -856,196 +1078,49 @@ export default function Board({ shared = false }) {
         setInputMessage("");
     };
 
-    // scroll to bottom of chat div each time a new message is received
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" });
+    const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" }); };
+
+    const getDynamicCursor = (handleId, boxRot) => {
+        const baseAngles = {
+            [HANDLE_RIGHT]: 0,
+            [HANDLE_BOTTOM_RIGHT]: 45,
+            [HANDLE_BOTTOM]: 90,
+            [HANDLE_BOTTOM_LEFT]: 135,
+            [HANDLE_LEFT]: 180,
+            [HANDLE_TOP_LEFT]: 225,
+            [HANDLE_TOP]: 270,
+            [HANDLE_TOP_RIGHT]: 315
+        };
+
+        let angle = (baseAngles[handleId] + (boxRot || 0)) % 360;
+        if (angle < 0) angle += 360;
+
+        if (angle >= 337.5 || angle < 22.5) return 'ew-resize';
+        if (angle >= 22.5 && angle < 67.5) return 'nwse-resize';
+        if (angle >= 67.5 && angle < 112.5) return 'ns-resize';
+        if (angle >= 112.5 && angle < 157.5) return 'nesw-resize';
+        if (angle >= 157.5 && angle < 202.5) return 'ew-resize';
+        if (angle >= 202.5 && angle < 247.5) return 'nwse-resize';
+        if (angle >= 247.5 && angle < 292.5) return 'ns-resize';
+        if (angle >= 292.5 && angle < 337.5) return 'nesw-resize';
+        
+        return 'default';
     };
 
-    const handleRotationStart = (e) => { 
-        
-        const currSelectionBBox = selectionBBoxRef.current;
-        if (!currSelectionBBox) return;
-
-        const centerX = currSelectionBBox.x + currSelectionBBox.width / 2;
-        const centerY = currSelectionBBox.y + currSelectionBBox.height / 2;
-        const stage = e.target.getStage();
-        
-        const pointerPos = stage.getPointerPosition();
-        const scale = stage.scaleX() || 1;
-        const virtualX = (pointerPos.x - stage.x()) / scale;
-        const virtualY = (pointerPos.y - stage.y()) / scale;
-        
-        lastAngleRef.current = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
-        
-        cumulativeDeltaRef.current = 0; 
-        initialBoxRotRef.current = selectionBBoxRotation || 0;
-        
-        const initialData = {};
-        linesRef.current.forEach(l => {
-            if (selectedIdsRef.current.includes(l.id)) {
-                initialData[l.id] = {
-                    rotation: l.rotation || 0,
-                    x: l.x !== undefined ? l.x : centerX,
-                    y: l.y !== undefined ? l.y : centerY,
-                    offsetX: l.offsetX !== undefined ? l.offsetX : centerX,
-                    offsetY: l.offsetY !== undefined ? l.offsetY : centerY,
-                };
-            }
-        });
-        initialLinesRotRef.current = initialData;
-    }
-
-    const handleRotationDrag = (e) => {
-        
-        const currSelectionBBox = selectionBBoxRef.current;
-        if (!currSelectionBBox) return;
-
-        const centerX = currSelectionBBox.x + currSelectionBBox.width / 2;
-        const centerY = currSelectionBBox.y + currSelectionBBox.height / 2;
-        const stage = e.target.getStage();
-        
-        const pointerPos = stage.getPointerPosition();
-        const scale = stage.scaleX() || 1;
-        const virtualX = (pointerPos.x - stage.x()) / scale;
-        const virtualY = (pointerPos.y - stage.y()) / scale;
-        
-        const currentAngle = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
-
-        let frameDelta = currentAngle - lastAngleRef.current;
-
-        if (frameDelta > 180) frameDelta -= 360;
-        else if (frameDelta < -180) frameDelta += 360;
-
-        cumulativeDeltaRef.current += frameDelta;
-        lastAngleRef.current = currentAngle;
-
-        const totalDelta = cumulativeDeltaRef.current;
-        
-        setSelectionBBoxRotation(initialBoxRotRef.current + totalDelta);
-        
-        const rad = totalDelta * (Math.PI / 180);
-        const cos = Math.cos(rad);
-        const sin = Math.sin(rad);
-        
-        setLines(prev => prev.map(l => {
-            if (selectedIdsRef.current.includes(l.id)) {
-                const init = initialLinesRotRef.current[l.id];
-
-                const dx = init.x - centerX;
-                const dy = init.y - centerY;
-
-                const newX = centerX + (dx * cos - dy * sin);
-                const newY = centerY + (dx * sin + dy * cos);
-
-                return { 
-                    ...l, 
-                    rotation: init.rotation + totalDelta,
-                    x: newX,
-                    y: newY,
-                    offsetX: init.offsetX,
-                    offsetY: init.offsetY
-                };
-            }
-            return l;
-        }));
-    }
-
-    const handleRotationEnd = useCallback((e) => {
-        if (!selectionBBoxRef.current) return;
-    
-        const currentBBox = selectionBBoxRef.current;
-        const centerX = currentBBox.x + currentBBox.width / 2;
-        const centerY = currentBBox.y + currentBBox.height / 2;
-        const currLines = linesRef.current;
-
-        const updatedLines = linesRef.current.map(l => {
-            if (!selectedIdsRef.current.includes(l.id)) return l;
-            if (!l.rotation) return l; 
-
-            const angleRad = (l.rotation * Math.PI) / 180;
-            const cos = Math.cos(angleRad);
-            const sin = Math.sin(angleRad);
-
-            const originX = l.offsetX !== undefined ? l.offsetX : centerX;
-            const originY = l.offsetY !== undefined ? l.offsetY : centerY;
-            const posX = l.x !== undefined ? l.x : centerX;
-            const posY = l.y !== undefined ? l.y : centerY;
-
-            const newPoints = [];
-            for (let i = 0; i < l.points.length; i += 2) {
-                const px = l.points[i];
-                const py = l.points[i + 1];
-
-                const dx = px - originX;
-                const dy = py - originY;
-
-                const rx = posX + (dx * cos - dy * sin);
-                const ry = posY + (dx * sin + dy * cos);
-
-                newPoints.push(rx, ry);
-            }
-
-            return { 
-                ...l, 
-                points: newPoints,
-                rotation: 0,
-                x: 0,
-                y: 0,
-                offsetX: 0,
-                offsetY: 0
-            };
-        });
-
-        linesRef.current = updatedLines;
-        setLines(updatedLines);
-
-        const rotatedLinesPairs = selectedIdsRef.current.map(id => {
-            const newLineData = linesRef.current?.find(l => l.id === id);
-            const initialLineData = initialLinesRotRef.current?.[id];
-            
-            const fallbackLineData = currLines.find(l => l.id === id); 
-            
-            if (!newLineData || !fallbackLineData) return null;
-
-            const oldLineData = {
-                ...fallbackLineData,
-                rotation: initialLineData ? initialLineData.rotation : 0,
-                x: initialLineData ? initialLineData.x : fallbackLineData.x,
-                y: initialLineData ? initialLineData.y : fallbackLineData.y,
-                offsetX: initialLineData ? initialLineData.offsetX : fallbackLineData.offsetX,
-                offsetY: initialLineData ? initialLineData.offsetY : fallbackLineData.offsetY
-            };
-
-            return { prev_line: oldLineData, new_line: newLineData };
-        }).filter(Boolean); // remove null
-
-        if (rotatedLinesPairs.length > 0) {
-            setEditHistory((prev) => {
-                let newHistory;
-
-                if (prev.history.length < NUM_MAX_UNDO) {
-                    newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: rotatedLinesPairs, op: "rotate" }];
-                } else {
-                    newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: rotatedLinesPairs, op: "rotate" }];
-                }
-                
-                return { history: newHistory, editIndex: newHistory.length - 1 };
-            });
-
-            const rotatedLines = rotatedLinesPairs.map(pair => pair.new_line);
-            socketRef.current?.emit('board:draw:group_rotate', rotatedLines);
-        }
-
-    }, []);
+    const handleSBoxRotComponentMouseEnter = (e) => e.target.getStage().container().style.cursor = 'grab';
+    const handleSBoxResizeComponentMouseEnter = (e, current_handle) => {
+        const cursor = getDynamicCursor(current_handle, selectionBBoxRotation);
+        e.target.getStage().container().style.cursor = cursor;
+    };
+    const handleSBoxComponentMouseLeave = (e) => e.target.getStage().container().style.cursor = 'default';
 
     const handleExitAndSaveThumbnail = () => {
-    clearSelection();
-
-    setTimeout(() => {
-        saveThumbnail();
-        navigate('/');
-    }, WAIT_BEFORE_EXIT); 
-};
+        clearSelection();
+        setTimeout(() => {
+            saveThumbnail();
+            navigate('/');
+        }, WAIT_BEFORE_EXIT); 
+    };
 
     return (
         <div className="h-screen overflow-hidden relative bg-white" style={{ height: '100dvh' }} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}>
@@ -1260,8 +1335,8 @@ export default function Board({ shared = false }) {
 
                     {selectionBBox && (
                         <Group
-                            x={selectionBBox.x + selectionBBox.width / 2}
-                            y={selectionBBox.y + selectionBBox.height / 2}
+                            x={selectionBBox.globalCenterX !== undefined ? selectionBBox.globalCenterX : selectionBBox.x + selectionBBox.width / 2}
+                            y={selectionBBox.globalCenterY !== undefined ? selectionBBox.globalCenterY : selectionBBox.y + selectionBBox.height / 2}
                             offsetX={selectionBBox.x + selectionBBox.width / 2}
                             offsetY={selectionBBox.y + selectionBBox.height / 2}
                             rotation={selectionBBoxRotation || 0}
@@ -1279,15 +1354,101 @@ export default function Board({ shared = false }) {
                                 fill="rgba(59, 130, 246, 0.05)"
                             />
 
-                            <Rect x={selectionBBox.x - 4} y={selectionBBox.y - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
-                            <Rect x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
-                            <Rect x={selectionBBox.x - 4} y={selectionBBox.y + selectionBBox.height - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
-                            <Rect x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y + selectionBBox.height - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+                            <Rect 
+                                id={`${HANDLE_TOP_LEFT}`}
+                                name="resize-handler"
+                                x={selectionBBox.x - 4} y={selectionBBox.y - 4} width={10} height={10} 
+                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                onPointerDown={(e) => handleResizeStart(e, HANDLE_TOP_LEFT)} 
+                                onTouchStart={(e) => handleResizeStart(e, HANDLE_TOP_LEFT)} 
+                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_TOP_LEFT)} 
+                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
+                            /> 
 
-                            <Rect x={selectionBBox.x + selectionBBox.width / 2 - 4} y={selectionBBox.y - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
-                            <Rect x={selectionBBox.x + selectionBBox.width / 2 - 4} y={selectionBBox.y + selectionBBox.height - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} />
-                            <Rect x={selectionBBox.x - 4} y={selectionBBox.y + selectionBBox.height / 2 - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
-                            <Rect x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y + selectionBBox.height / 2 - 4} width={8} height={8} fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} strokeWidth={1} /> 
+                            <Rect 
+                                id={`${HANDLE_TOP_RIGHT}`}
+                                name="resize-handler"
+                                x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y - 4} width={10} height={10} 
+                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                onPointerDown={(e) => handleResizeStart(e, HANDLE_TOP_RIGHT)} 
+                                onTouchStart={(e) => handleResizeStart(e, HANDLE_TOP_RIGHT)} 
+                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_TOP_RIGHT)} 
+                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
+                            /> 
+
+                            <Rect
+                                id={`${HANDLE_BOTTOM_LEFT}`} 
+                                name="resize-handler"
+                                x={selectionBBox.x - 4} y={selectionBBox.y + selectionBBox.height - 4} width={10} height={10} 
+                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                onPointerDown={(e) => handleResizeStart(e, HANDLE_BOTTOM_LEFT)} 
+                                onTouchStart={(e) => handleResizeStart(e, HANDLE_BOTTOM_LEFT)} 
+                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_BOTTOM_LEFT)}
+                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
+                            /> 
+
+                            <Rect
+                                id={`${HANDLE_BOTTOM_RIGHT}`}  
+                                name="resize-handler"
+                                x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y + selectionBBox.height - 4} width={10} height={10} 
+                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                onPointerDown={(e) => handleResizeStart(e, HANDLE_BOTTOM_RIGHT)} 
+                                onTouchStart={(e) => handleResizeStart(e, HANDLE_BOTTOM_RIGHT)} 
+                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_BOTTOM_RIGHT)}
+                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
+                            /> 
+
+                            <Rect 
+                                id={`${HANDLE_TOP}`}  
+                                name="resize-handler"
+                                x={selectionBBox.x + selectionBBox.width / 2 - 4} y={selectionBBox.y - 4} width={10} height={10} 
+                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                onPointerDown={(e) => handleResizeStart(e, HANDLE_TOP)} 
+                                onTouchStart={(e) => handleResizeStart(e, HANDLE_TOP)} 
+                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_TOP)}
+                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
+                            /> 
+
+                            <Rect 
+                                id={`${HANDLE_BOTTOM}`} 
+                                name="resize-handler"
+                                x={selectionBBox.x + selectionBBox.width / 2 - 4} y={selectionBBox.y + selectionBBox.height - 4} width={10} height={10} 
+                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                onPointerDown={(e) => handleResizeStart(e, HANDLE_BOTTOM)} 
+                                onTouchStart={(e) => handleResizeStart(e, HANDLE_BOTTOM)} 
+                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_BOTTOM)}
+                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
+                            />
+
+                            <Rect 
+                                id={`${HANDLE_LEFT}`}  
+                                name="resize-handler"
+                                x={selectionBBox.x - 4} y={selectionBBox.y + selectionBBox.height / 2 - 4} width={10} height={10} 
+                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                onPointerDown={(e) => handleResizeStart(e, HANDLE_LEFT)} 
+                                onTouchStart={(e) => handleResizeStart(e, HANDLE_LEFT)} 
+                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_LEFT)}
+                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
+                            />
+
+                            <Rect
+                                id={`${HANDLE_RIGHT}`}   
+                                name="resize-handler"
+                                x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y + selectionBBox.height / 2 - 4} width={10} height={10} 
+                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                onPointerDown={(e) => handleResizeStart(e, HANDLE_RIGHT)} 
+                                onTouchStart={(e) => handleResizeStart(e, HANDLE_RIGHT)} 
+                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_RIGHT)}
+                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
+                            /> 
 
                             <Line 
                                 points={[
@@ -1306,8 +1467,8 @@ export default function Board({ shared = false }) {
                                 y={selectionBBox.y - 25}
                                 listening={true}
 
-                                onMouseEnter={(e) => { e.target.getStage().container().style.cursor = 'grab'; }}
-                                onMouseLeave={(e) => { e.target.getStage().container().style.cursor = 'default'; }}
+                                onMouseEnter={(e) => {handleSBoxRotComponentMouseEnter(e)}}
+                                onMouseLeave={(e) => {handleSBoxComponentMouseLeave(e)}}
 
                                 onPointerDown={(e) => { 
                                     e.cancelBubble = true;
@@ -1441,7 +1602,7 @@ export default function Board({ shared = false }) {
                     fixed bottom-6 right-2 z-20 flex flex-col w-80 md:w-96 h-[92vh]
                     bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden font-sans
                     transition-all duration-300 ease-in-out origin-bottom-right 
-                    ${chatOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}                                                                                                                              
+                    ${chatOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}                                                                                                               
                 `}
             >
                 
