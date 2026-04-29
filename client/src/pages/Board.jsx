@@ -19,7 +19,7 @@ import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_P
          HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, SELECTION_BOX_COLOR, LASSO_LINE_COLOR, RESIZE_HANDLE_WH } from "../utils/boardConstants";
 
 import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, 
-         lineIntersectsOrInsidePolygon, computeSelectionBBox, getDynamicCursor } from "../utils/boardUtils";
+         lineIntersectsOrInsidePolygon, computeSelectionBBox, getDynamicCursor, translatePoints } from "../utils/boardUtils";
 
 export default function Board({ shared = false }) {
     const { id, token } = useParams();
@@ -75,6 +75,10 @@ export default function Board({ shared = false }) {
     const selectedIdsRef = useRef([]);
     const selectionLassoDataRef = useRef(null);
     const selectionBBoxRef = useRef(null);
+
+    const copiedLinesRef = useRef([]);
+    const numTimesPastedRef = useRef(null);
+    const lastPastePosRef = useRef({x: 0, y: 0});
 
     useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
@@ -652,12 +656,20 @@ export default function Board({ shared = false }) {
                 });
                 socketRef.current?.emit('board:draw:undo', { op: 'group_erase', line: last_edit.lines }); 
             }
-            else {
+            else if (last_edit.op === 'paste') {
                 setLines((prevLines) => {
+                    return (prevLines.filter(l => !last_edit.lines.find(line => line.id === l.id)));
+                });
+                socketRef.current?.emit('board:draw:undo', { op: 'paste', line: last_edit.lines }); 
+                clearSelection();
+            }
+            else {
+                setLines((prevLines) => { // erase
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
                     const newLines = [...prevLines, last_edit.line];
                     return sortLinesByTime(newLines)
                 });
+                clearSelection();
                 socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'erase', line: last_edit.line });
             }
             return { history: prevHistory.history, editIndex: prevHistory.editIndex - 1 };
@@ -691,7 +703,15 @@ export default function Board({ shared = false }) {
                 setLines((prevLines) => prevLines.filter(l => !last_edit.lines.some(line => l.id === line.id)));
                 socketRef.current?.emit('board:draw:redo', { op: 'group_erase', line: last_edit.lines });
             }
-            else {
+            else if (last_edit.op === 'paste') {
+                setLines((prev) => {
+                    if (prev.some(l => last_edit.lines.some(line => l.id === line.id))) return prev;
+                    const updatedLines = [...prev, ...last_edit.lines];
+                    return sortLinesByTime(updatedLines);
+                })
+                socketRef.current?.emit('board:draw:redo', { op: 'paste', line: last_edit.lines });
+            }
+            else { // erase
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'erase' });
             }
@@ -699,8 +719,62 @@ export default function Board({ shared = false }) {
         });
     }, [clearSelection, socketRef, setLines]);
 
+    const handleCopy = useCallback(() => {
+        if (!selectedIdsRef.current?.length > 0) return;
+        numTimesPastedRef.current = 0;
+        copiedLinesRef.current = linesRef.current?.filter(l => selectedIdsRef.current.includes(l.id));
+    }, [copiedLinesRef, numTimesPastedRef]);
+
+    const handlePaste = useCallback(() => { // add socket logic other clients + backend, + bug first paste in one position, second paste in another even though cursor hasn't moved
+        if (copiedLinesRef.current?.length === 0) return;
+
+        const stage = stageRef.current;
+        const pointerPos = stage.getPointerPosition();
+        const pointerScale = stage.scaleX() || 1;
+        const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
+
+        let linesToAdd = copiedLinesRef.current;
+
+        const referencePointX = linesToAdd[0].points[0];
+        const referencePointY = linesToAdd[0].points[1];
+
+        const commonDx = (20 * numTimesPastedRef.current) + pos.x - referencePointX; // if we paste in the same position gradually increase dx
+        const commonDy = pos.y - referencePointY; 
+
+        linesToAdd = linesToAdd.map(l => {
+            return {
+                ...l, 
+                id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                points: translatePoints(l.points, commonDx, commonDy)
+            }
+        });
+
+        setLines((prev) => {
+            const updatedLines = [...prev, ...linesToAdd];
+            return updatedLines;
+        });
+
+        if (Math.abs(lastPastePosRef.current.x - pos.x) < 30 && Math.abs(lastPastePosRef.current.y - pos.y) < 30) numTimesPastedRef.current++;
+        else numTimesPastedRef.current = 0;
+        lastPastePosRef.current = {x: pos.x, y: pos.y};
+
+        setEditHistory((prev) => {
+                let newHistory;
+                if (prev.history.length < NUM_MAX_UNDO) {
+                    newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linesToAdd, op: "paste" }];
+                } else {
+                    newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: linesToAdd, op: "paste" }];
+                }
+                return { history: newHistory, editIndex: newHistory.length - 1 };
+            });
+
+        socketRef.current?.emit('board:draw:paste', linesToAdd);
+        clearSelection();
+
+    }, [copiedLinesRef, setLines, stageRef, numTimesPastedRef, lastPastePosRef, translatePoints, clearSelection]);
+
     useEffect(() => {
-        const handleUndoRedoShortcuts = (e) => {
+        const handleShortcuts = (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
             const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -716,10 +790,24 @@ export default function Board({ shared = false }) {
                 e.preventDefault();
                 handleRedo();
             }
+
+            else if (e.key.toLowerCase() === 'c') {
+                e.preventDefault();
+                console.log("copia");
+                handleCopy();
+            }
+
+            else if (e.key.toLowerCase() === 'v') {
+                e.preventDefault();
+                console.log("incolla");
+                handlePaste();
+            }
+
+            else {}
         };
 
-        window.addEventListener('keydown', handleUndoRedoShortcuts);
-        return () => window.removeEventListener('keydown', handleUndoRedoShortcuts);
+        window.addEventListener('keydown', handleShortcuts);
+        return () => window.removeEventListener('keydown', handleShortcuts);
     }, [handleUndo, handleRedo]);
 
     const activeSize = (tool === 'eraser') ? eraserSize : (tool === 'highlighter') ? highlighterSize : (tool === 'shape') ? shapeWidth : strokeWidth;

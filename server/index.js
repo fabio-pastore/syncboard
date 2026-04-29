@@ -8,6 +8,7 @@ const { Server } = require('socket.io');
 const authRoutes = require('./routes/auth');
 const boardRoutes = require('./routes/boards');
 const folderRoutes = require('./routes/folders');
+const userRoutes = require('./routes/user');
 const authMiddleware = require('./middleware/auth');
 
 const app = express();
@@ -46,7 +47,7 @@ app.get('/api/boards/share/:token', authMiddleware, async (req, res) => {
 });
 
 app.use('/api/boards', boardRoutes);
-
+app.use('/api/user', userRoutes);
 app.use('/api/folders', folderRoutes);
 
 mongoose.connect(process.env.MONGO_URI)

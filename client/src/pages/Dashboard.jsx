@@ -154,9 +154,18 @@ export default function Dashboard() {
                     <span className="text-gray-900">Board</span>
                 </h1>
                 <div className="flex items-center gap-3 text-sm">
-                    <span className="text-gray-500">
-                        Welcome back, <b className="text-gray-800">{user.username}</b>
-                    </span>
+                    <button
+                        onClick={() => navigate('/profile')}
+                        className="flex items-center gap-2 text-gray-500 hover:text-gray-700 transition cursor-pointer"
+                        title="Edit Profile"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-violet-500">
+                            <path fillRule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clipRule="evenodd" />
+                        </svg>
+                        <span className="text-gray-500">
+                            Welcome back, <b className="text-gray-800">{user.username}</b>
+                        </span>
+                    </button>
                     <button
                         onClick={logout}
                         className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition cursor-pointer"
@@ -250,15 +259,21 @@ export default function Dashboard() {
                         <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3">
                             Folders
                         </h2>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-4">
                             {folders.map((folder) => (
                                 <div
                                     key={folder._id}
+                                    onClick={() => {
+                                        if (editingFolder !== folder._id) {
+                                            openFolder(folder);
+                                        }
+                                    }}
                                     className={`
-                                        group relative bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition cursor-pointer
+                                        group relative bg-white border border-gray-200 rounded-xl hover:border-gray-300 hover:shadow-sm transition cursor-pointer
+                                        w-full flex flex-col overflow-hidden
                                         ${(draggedOverFolder === folder._id) && (draggedItem?.id !== folder._id) 
                                             ? 'border-violet-400 bg-violet-50 shadow-sm ring-2 ring-violet-200' 
-                                            : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
+                                            : ''
                                         }
                                     `}
                                     draggable
@@ -268,54 +283,61 @@ export default function Dashboard() {
                                     onDragLeave={() => setDraggedOverFolder(null)}
                                     onDrop={(e) => {e.preventDefault(); moveItem(folder._id)}}
                                 >
-                                    {editingFolder === folder._id ? (
-                                        <form
-                                            onSubmit={(e) => {
-                                                e.preventDefault();
-                                                renameFolder(folder._id);
-                                            }}
-                                            className="flex flex-col gap-2"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            <input
-                                                type="text"
-                                                value={editName}
-                                                onChange={(e) =>
-                                                    setEditName(e.target.value)
-                                                }
-                                                autoFocus
-                                                className="px-2 py-1 rounded border border-gray-200 text-gray-800 text-sm outline-none focus:border-violet-400"
-                                            />
-                                            <div className="flex gap-1">
-                                                <button
-                                                    type="submit"
-                                                    className="text-xs px-2 py-1 rounded bg-violet-600 text-white hover:bg-violet-700 cursor-pointer"
-                                                >
-                                                    Save
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setEditingFolder(null);
-                                                        setEditName('');
-                                                    }}
-                                                    className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 cursor-pointer"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        </form>
-                                    ) : (
-                                        <div onClick={() => openFolder(folder)}>
-                                            <img src={folderIcon} alt="Folder" className="w-8 h-8 mb-2" />
-                                            <p className="text-sm text-gray-800 truncate">
-                                                {folder.name}
-                                            </p>
-                                        </div>
-                                    )}
+                                    {/* Upper Icon Area - Minimum padding, 90% icon size, nudged right for visual center */}
+                                    <div className="w-full aspect-square flex items-center justify-center p-1 border-b border-gray-100">
+                                        <img src={folderIcon} alt="Folder" className="w-[90%] h-[90%] object-contain drop-shadow-sm translate-x-1" />
+                                    </div>
 
+                                    {/* Lower Name Area - Extremely slim height to match proportions */}
+                                    <div className="px-1 py-1.5 flex items-center justify-center min-h-[32px]">
+                                        {editingFolder === folder._id ? (
+                                            <form
+                                                onSubmit={(e) => {
+                                                    e.preventDefault();
+                                                    renameFolder(folder._id);
+                                                }}
+                                                className="flex flex-col gap-1 items-center w-full"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <input
+                                                    type="text"
+                                                    value={editName}
+                                                    onChange={(e) => setEditName(e.target.value)}
+                                                    autoFocus
+                                                    className="w-full px-1 py-0.5 rounded border border-gray-200 text-gray-800 text-[11px] text-center outline-none focus:border-violet-400"
+                                                />
+                                                <div className="flex gap-1 w-full justify-center">
+                                                    <button
+                                                        type="submit"
+                                                        className="flex-1 text-[10px] px-1 py-0.5 rounded bg-violet-600 text-white hover:bg-violet-700 cursor-pointer"
+                                                    >
+                                                        Save
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setEditingFolder(null);
+                                                            setEditName('');
+                                                        }}
+                                                        className="flex-1 text-[10px] px-1 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 cursor-pointer"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        ) : (
+                                            <div className="w-full flex items-center justify-center overflow-hidden">
+                                                <p className="text-xs font-medium text-gray-800 truncate w-full text-center px-1">
+                                                    {folder.name}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Action Buttons */}
                                     {editingFolder !== folder._id && (
-                                        <div className="absolute top-2 right-2 hidden group-hover:flex gap-1">
+                                        <div className="absolute top-1 right-1 hidden group-hover:flex gap-1">
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -323,7 +345,7 @@ export default function Dashboard() {
                                                     setEditingBoard(null);
                                                     setEditName(folder.name);
                                                 }}
-                                                className="p-1 rounded border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 text-xs cursor-pointer"
+                                                className="p-1 rounded bg-white/90 border border-gray-200 text-gray-500 hover:text-gray-800 hover:bg-white text-[10px] cursor-pointer shadow-sm leading-none"
                                                 title="Rename"
                                             >
                                                 &#9998;
@@ -333,7 +355,7 @@ export default function Dashboard() {
                                                     e.stopPropagation();
                                                     deleteFolder(folder._id);
                                                 }}
-                                                className="p-1 rounded border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 text-xs cursor-pointer"
+                                                className="p-1 rounded bg-white/90 border border-gray-200 text-gray-500 hover:text-red-600 hover:bg-red-50 text-[10px] cursor-pointer shadow-sm leading-none"
                                                 title="Delete"
                                             >
                                                 &times;

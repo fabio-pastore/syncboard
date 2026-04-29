@@ -43,8 +43,18 @@ export function AuthProvider({ children }) {
         setUser(null);  // this way the app doesn't still think we're logged in after logging out
     }
 
+    function updateUser(updatedUser) {
+        const newUser = {
+            id: updatedUser._id, 
+            email: updatedUser.email, 
+            username: updatedUser.username
+        };
+        localStorage.setItem('user', JSON.stringify(newUser));
+        setUser(newUser);
+    }
+
     return (
-        <AuthContext.Provider value={{ user, loading, signup, login, logout }}>
+        <AuthContext.Provider value={{ user, loading, signup, login, logout, updateUser }}>
             {children}
         </AuthContext.Provider>
     )

@@ -17,7 +17,7 @@ export default function Login() {
             await login(identifier, password);
             navigate('/');
         } catch (err) {
-            setError('Failed to log in');
+            setError('Unknown email/username or incorrect password');
         }
     }
 
@@ -43,6 +43,7 @@ export default function Login() {
                     required
                     className="px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-700 text-white placeholder-gray-500 outline-none focus:border-violet-500 transition"
                  />
+                {error && <p className="text-red-500 text-sm text-center">{error}</p>}
                 <button type="submit" className='py-2.5 bg-violet-600 hover:bg-violet-700 transition rounded-lg font-medium cursor-pointer'>Log in</button>
                 <p className="text-center text-gray-400 text-sm">Don't have an account? <Link to="/signup" className='text-violet-400 hover:underline'>Sign up</Link></p>
             </form>
