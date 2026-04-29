@@ -1,16 +1,25 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from "react";
-import { Stage, Layer, Line, Circle, Rect } from "react-konva";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Stage, Layer, Line, Circle, Rect, Text, Group } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, MessageCircle, Users, Share2, X, Send } from "lucide-react";
 import { useAuth } from '../context/AuthContext';
-
-import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN } from "../utils/boardConstants";
-import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, lineIntersectsOrInsidePolygon, computeSelectionBBox, translatePoints} from "../utils/boardUtils";
 import useSocket from "../hooks/useSocket";
 import useExport from "../hooks/useExport";
 import useTouchHandlers from "../hooks/useTouchHandlers";
+import useShapeDrag from "../hooks/useShapeDrag";
+import useShapeRotate from "../hooks/useShapeRotate";
+import useShapeResize from "../hooks/useShapeResize";
 import ShareModal from "../components/board/ShareModal";
 import Toolbar from "../components/board/Toolbar";
+import SentMessage from "../components/board/SentMessage"
+import ReceivedMessage from "../components/board/ReceivedMessage"
+import UserEntry from "../components/board/UserEntry";
+
+import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
+         HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, SELECTION_BOX_COLOR, LASSO_LINE_COLOR, RESIZE_HANDLE_WH } from "../utils/boardConstants";
+
+import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, 
+         lineIntersectsOrInsidePolygon, computeSelectionBBox, getDynamicCursor } from "../utils/boardUtils";
 
 export default function Board({ shared = false }) {
     const { id, token } = useParams();
@@ -39,11 +48,10 @@ export default function Board({ shared = false }) {
     const [showShareModal, setShowShareModal] = useState(false);
     const [lastUpdate, setLastUpdate] = useState(0);
 
-    const LASSO_LINE_COLOR = "#959494"
-    const SELECTION_BOX_COLOR = "#3b82f6"
     const [selectedIds, setSelectedIds] = useState([]);
     const [selectionLasso, setSelectionLasso] = useState(null);
-    const [selectionBBox, setSelectionBBox] = useState(null); // BB = bounding box
+    const [selectionBBox, setSelectionBBox] = useState(null);
+    const [selectionBBoxRotation, setSelectionBBoxRotation] = useState(0);
     const [isDraggingSelection, setIsDraggingSelection] = useState(false);
 
     const stageRef = useRef(null);
@@ -62,18 +70,15 @@ export default function Board({ shared = false }) {
     const stagePositionRef = useRef({ x: 0, y: 0 });
     const pointerTypeRef = useRef('mouse');
     const isPenActiveRef = useRef(false);
-
     const selectionLassoRef = useRef(null);
-    const dragStartRef = useRef(null);
 
     const selectedIdsRef = useRef([]);
     const selectionLassoDataRef = useRef(null);
     const selectionBBoxRef = useRef(null);
-    const isDraggingSelectionRef = useRef(false);
+
     useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
     useEffect(() => {selectionBBoxRef.current = selectionBBox}, [selectionBBox]);
-    useEffect(() => {isDraggingSelectionRef.current = isDraggingSelection}, [isDraggingSelection]);
 
     const [chatOpen, setChatOpen] = useState(false);
     const [inputMessage, setInputMessage] = useState("");
@@ -81,40 +86,96 @@ export default function Board({ shared = false }) {
     const messagesEndRef = useRef(null);
     useEffect(() => {inputMessageRef.current = inputMessage}, [inputMessage]);
 
-    const { board, setBoard, lines, setLines, peers, role, error, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared });
+    const [showPeers, setShowPeers] = useState(false);
+
+    const clearSelection = useCallback(() => {
+        setSelectedIds([]);
+        setSelectionLasso(null);
+        setSelectionBBox(null);
+        setSelectionBBoxRotation(0);
+        setIsDraggingSelection(false);
+        if (selectionLassoRef.current) {
+            selectionLassoRef.current.hide();
+            selectionLassoRef.current.getLayer().batchDraw();
+        }
+    }, []);
+
+    const handleOtherClientEdit = useCallback((shapeId) => {
+        if (selectedIdsRef.current.includes(shapeId)) clearSelection();
+    }, [clearSelection]);
+
+    const sortLinesByTime = (linesArray) => {
+        return [...linesArray].sort((x, y) => {
+            const timeX = parseInt(x.id.split('_')[0], 10);
+            const timeY = parseInt(y.id.split('_')[0], 10);
+            return timeX - timeY;
+        });
+    };
+
+    const reorderLines = useCallback((lines) => sortLinesByTime(lines), []);
+
+    const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, 
+            role, error, setError, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
     useEffect(() => { shapeRef.current = shape }, [shape]);
+
+    const { isDraggingSelectionRef, handleDragStart, handleDragMove, handleDragEnd } = useShapeDrag({
+        stageRef, linesRef, setLines, selectionBBoxRef, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsDraggingSelection
+    });
+
+    const { isRotatingRef, handleRotationStart, handleRotationDrag, handleRotationEnd } = useShapeRotate({
+        stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBoxRotation, selectedIdsRef, setEditHistory, socketRef
+    });
+
+    const { isResizingRef, handleResizeStart, handleResizeDrag, handleResizeEnd } = useShapeResize({
+        stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef
+    });
+
     useEffect(() => {
-    const onKeyDown = (e) => {
-        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
-            selectedIds.forEach(id => {
-                socketRef.current?.emit('board:draw:erase', id);
-            });
-            setLines(prev => prev.filter(l => !selectedIds.includes(l.id)));
-            clearSelection();
-        }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-}, [selectedIds]);
+        const onKeyDown = (e) => {
+            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
+                const linesToErase = selectedIds.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean);
+                if (linesToErase.length > 0) {
+                    setEditHistory((prev) => {
+                        const currentHistory = prev.history.slice(0, prev.editIndex + 1);
+                        const currentErasedSignature = linesToErase.map(l => l.id).sort().join(',');
+                        const isDuplicate = currentHistory.some(item => {
+                            if (item.op !== 'group_erase') return false;
+                            return item.lines.map(l => l.id).sort().join(',') === currentErasedSignature;
+                        });
+                        if (isDuplicate) return prev; 
+                        let newHistory;
+                        if (prev.history.length < NUM_MAX_UNDO) {
+                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
+                        } else {
+                            newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
+                        }
+                        return { history: newHistory, editIndex: newHistory.length - 1 };
+                    });
+                    const erasedIds = linesToErase.map(l => l.id);
+                    socketRef.current?.emit('board:draw:group_erase', erasedIds);
+                }
+                setLines(prev => prev.filter(l => !selectedIds.includes(l.id)));
+                clearSelection();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [selectedIds, clearSelection, socketRef, setLines]);
 
     const { touchCountRef } = useTouchHandlers({
-        stageRef, setScale,
-        isDrawingRef, activeLineRef, activeLineDataRef,
-        activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef,
+        stageRef, setScale, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
+        activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef, isResizingRef
     });
 
-    const { exportToPng, exportToPDF, saveThumbnail } = useExport({
-        stageRef, linesRef, lines, board, id, shared,
-    });
+    const { exportToPng, exportToPDF, saveThumbnail } = useExport({ stageRef, linesRef, lines, board, id, shared });
 
     const canDraw = (role === 'editor');
+
     useEffect(() => {
-        function onResize() {
-            setStageSize({ width: window.innerWidth, height: window.innerHeight });
-        }
+        function onResize() { setStageSize({ width: window.innerWidth, height: window.innerHeight }); }
         window.addEventListener("resize", onResize);
         return () => window.removeEventListener("resize", onResize);
     }, []);
@@ -124,31 +185,22 @@ export default function Board({ shared = false }) {
             const layer = stageRef.current?.findOne('.draw-layer');
             if (layer) {
                 layer.getChildren().forEach(line => {
-                    line.hitStrokeWidth(eraserSize);
+                    if (line.getClassName() === 'Line') line.hitStrokeWidth(eraserSize);
                 });
             }
         }
     }, [eraserSize, tool]);
 
-    const clearSelection = useCallback(() => {
-        setSelectedIds([]);
-        setSelectionLasso(null);
-        setSelectionBBox(null);
-        setIsDraggingSelection(false);
-        if (selectionLassoRef.current) {
-            selectionLassoRef.current.hide();
-            selectionLassoRef.current.getLayer().batchDraw();
-        }
-    }, []);
-
     useEffect(() => {
         toolRef.current = tool;
         if (tool !== 'select') clearSelection();
-    }, [tool]);
+    }, [tool, clearSelection]);
 
     const handlePointerDown = useCallback((e) => {
         if (isPanningRef.current) return;
+        if (e.target !== e.target.getStage() && e.target.name() !== 'selection-box' && !e.target.id()) return;
         if (e.evt.pointerType === 'touch' && touchCountRef.current >= 1) return;
+        
         if (e.evt.button === 1) {
             e.evt.preventDefault();
             isPanningRef.current = true;
@@ -161,6 +213,7 @@ export default function Board({ shared = false }) {
             if (eraserCursorRef.current) eraserCursorRef.current.style.display = 'none';
             return;
         }
+
         if (e.evt.pointerType === 'touch') return;
         if (!canDraw) return;
         if (e.evt.pointerType !== 'pen' && e.evt.button !== 0) return;
@@ -175,10 +228,7 @@ export default function Board({ shared = false }) {
         const pointerScale = stage.scaleX() || 1;
 
         if (toolRef.current === 'shape') {
-            const pos = {
-                x: (pointerPos.x - stage.x()) / pointerScale,
-                y: (pointerPos.y - stage.y()) / pointerScale,
-            };
+            const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
             newLine = {
                 id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
                 type: (shapeRef.current === 'circle') ? 'circle' : 'line',
@@ -203,7 +253,7 @@ export default function Board({ shared = false }) {
                 if (lineData) {
                     setLines((prev) => prev.filter((l) => l.id !== lineId));
                     setEditHistory((prev) => {
-                        if (prev.history.some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
+                        if (prev.history.slice(0, prev.editIndex + 1).some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
                         let newHistory;
                         if (prev.history.length < NUM_MAX_UNDO) {
                             newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lineData, op: "erase" }];
@@ -217,28 +267,14 @@ export default function Board({ shared = false }) {
         }
         
         if (toolRef.current === 'select') {
-
-            if (selectionBBoxRef.current) {
-                const pos = {
-                    x: (pointerPos.x - stage.x()) / pointerScale,
-                    y: (pointerPos.y - stage.y()) / pointerScale,
-                }
-                if (pos.x >= selectionBBoxRef.current.x && pos.x <= selectionBBoxRef.current.x + selectionBBoxRef.current.width &&
-                    pos.y >= selectionBBoxRef.current.y && pos.y <= selectionBBoxRef.current.y + selectionBBoxRef.current.height) {
-                        setIsDraggingSelection(true);
-                        isDraggingSelectionRef.current = true;
-                        dragStartRef.current = { x: pos.x, y: pos.y };
-                        return;
-                    }
+            if (e.target.name() === 'selection-box' && selectionBBoxRef.current) {
+                const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
+                handleDragStart(pos);
+                return;
             }
-
             clearSelection();
             isDrawingRef.current = true;
-            const pos = { 
-                x: (pointerPos.x - stage.x()) / pointerScale,
-                y: (pointerPos.y - stage.y()) / pointerScale,
-            }
-            // setSelectionBBox([pos.x, pos.y]);
+            const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
             setSelectionLasso([pos.x, pos.y]);
             if (selectionLassoRef.current) {
                 selectionLassoRef.current.points([pos.x, pos.y]);
@@ -248,11 +284,7 @@ export default function Board({ shared = false }) {
             return;
         }
 
-        const pos = {
-            x: (pointerPos.x - stage.x()) / pointerScale,
-            y: (pointerPos.y - stage.y()) / pointerScale,
-        };
-
+        const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
         if (!newLine) {
             newLine = {
                 id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -293,9 +325,8 @@ export default function Board({ shared = false }) {
                     activeCircleFillRef.current.opacity(newLine.opacity);
                     activeCircleFillRef.current.globalCompositeOperation(newLine.globalCompositeOperation);
                     activeCircleFillRef.current.show();
-                } else {
-                    activeCircleFillRef.current.hide();
-                }
+                } else activeCircleFillRef.current.hide();
+                
                 if (activeLineRef.current) activeLineRef.current.hide();
                 activeCircleStrokeRef.current.getLayer().batchDraw();
             }
@@ -317,9 +348,24 @@ export default function Board({ shared = false }) {
                 activeLineRef.current.getLayer().batchDraw();
             }
         }
-    }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity]);
+    }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity, clearSelection, handleDragStart]);
 
     const handlePointerMove = useCallback((e) => {
+        const stage = stageRef.current;
+        const pointerPos = stage.getPointerPosition();
+        const pointerScale = stage.scaleX() || 1;
+
+        if (isResizingRef.current) {
+            handleResizeDrag(pointerPos, pointerScale);
+            return;
+        }
+
+        if (isRotatingRef.current) {
+            if (e.evt.preventDefault) e.evt.preventDefault();
+            handleRotationDrag(pointerPos, pointerScale);
+            return;
+        }
+
         if (isPanningRef.current) {
             const newPos = {
                 x: e.evt.clientX - panStartRef.current.x,
@@ -329,6 +375,7 @@ export default function Board({ shared = false }) {
             stagePositionRef.current = newPos;
             return;
         }
+
         if (e.evt.pointerType === 'touch') return;
         if (!canDraw) return;
 
@@ -339,10 +386,6 @@ export default function Board({ shared = false }) {
 
         if (!isDrawingRef.current) return;
 
-        const stage = stageRef.current;
-        const pointerPos = stage.getPointerPosition();
-        const pointerScale = stage.scaleX() || 1;
-
         if (toolRef.current === 'eraser') {
             const shape = stageRef.current.getIntersection(pointerPos);
             if (shape && (shape.getClassName() === 'Line' || shape.getClassName() == 'Circle')) {
@@ -351,7 +394,7 @@ export default function Board({ shared = false }) {
                 if (lineData) {
                     setLines((prev) => prev.filter((l) => l.id !== lineId));
                     setEditHistory((prev) => {
-                        if (prev.history.some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
+                        if (prev.history.slice(1, prev.editIndex + 1).some(item => item.op === 'erase' && item.line.id === lineId)) return prev;
                         let newHistory;
                         if (prev.history.length < NUM_MAX_UNDO) {
                             newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: lineData, op: "erase" }];
@@ -365,32 +408,12 @@ export default function Board({ shared = false }) {
         }
 
         if (toolRef.current === 'select') {
-            if (isDraggingSelectionRef.current && dragStartRef.current) {
-                const pos = {
-                    x: (pointerPos.x - stage.x()) / pointerScale,
-                    y: (pointerPos.y - stage.y()) / pointerScale,
-                }
-                const dx = pos.x - dragStartRef.current.x;
-                const dy = pos.y - dragStartRef.current.y;
-                dragStartRef.current = { x: pos.x, y: pos.y };
-
-                setLines(prev => {
-                    const updated = prev.map(l => {
-                        if (!selectedIdsRef.current.includes(l.id)) return l;
-                        return {...l, points: translatePoints(l.points, dx, dy)};
-                    });
-                    linesRef.current = updated;
-                    return updated;
-                });
-                setSelectionBBox(prev => prev ? {...prev, x: prev.x + dx, y: prev.y + dy } : null);
+            if (isDraggingSelectionRef.current) {
+                handleDragMove(pointerPos, pointerScale);
                 return;
             }
             if (!isDrawingRef.current) return;
-            const pos = {
-                x: (pointerPos.x - stage.x()) / pointerScale,
-                y: (pointerPos.y - stage.y()) / pointerScale,
-            };
-
+            const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
             setSelectionLasso(prev => {
                 const u = prev ? [...prev, pos.x, pos.y] : [pos.x, pos.y];
                 if (selectionLassoRef.current) {
@@ -404,10 +427,7 @@ export default function Board({ shared = false }) {
 
         if (!activeLineDataRef.current) return;
 
-        const pos = {
-            x: (pointerPos.x - stage.x()) / pointerScale,
-            y: (pointerPos.y - stage.y()) / pointerScale,
-        };
+        const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
 
         if (toolRef.current === 'shape') {
             const start_x = activeLineDataRef.current.points[0];
@@ -430,18 +450,14 @@ export default function Board({ shared = false }) {
                     const lastY = pts[pts.length - 1];
                     const dx = pos_x - lastX;
                     const dy = pos_y - lastY;
-                    if (dx * dx + dy * dy >= minSpaceSq) {
-                        pts.push(pos_x, pos_y);
-                    }
+                    if (dx * dx + dy * dy >= minSpaceSq) pts.push(pos_x, pos_y);
                 }
             } else {
                 const lastX = pts[pts.length - 2];
                 const lastY = pts[pts.length - 1];
                 const dx = pos.x - lastX;
                 const dy = pos.y - lastY;
-                if (dx * dx + dy * dy >= minSpaceSq) {
-                    pts.push(pos.x, pos.y);
-                }
+                if (dx * dx + dy * dy >= minSpaceSq) pts.push(pos.x, pos.y);
             }
         }
 
@@ -468,9 +484,19 @@ export default function Board({ shared = false }) {
             socketRef.current?.emit('board:draw:tmpline', activeLineDataRef.current);
             setLastUpdate(now);
         }
-    }, [canDraw]);
+    }, [canDraw, handleResizeDrag, handleRotationDrag, handleDragMove, isResizingRef, isRotatingRef, isDraggingSelectionRef]);
 
-    const handlePointerUp = useCallback(() => {
+    const handlePointerUp = useCallback((e) => {
+        if (isResizingRef.current) {
+            handleResizeEnd();
+            return;
+        }
+
+        if (isRotatingRef.current) {
+            handleRotationEnd();
+            return;
+        }
+
         isPenActiveRef.current = false;
         if (isPanningRef.current) {
             isPanningRef.current = false;
@@ -485,18 +511,11 @@ export default function Board({ shared = false }) {
 
         if (toolRef.current === 'select') {
             if (isDraggingSelectionRef.current) {
-                setIsDraggingSelection(false);
-                isDraggingSelectionRef.current = false;
-                dragStartRef.current = null;
-                // socket
-                selectedIdsRef.current.forEach(id => {
-                  socketRef.current?.emit('board:draw:line', linesRef.current?.find(l => l.id === id));  
-                });
+                handleDragEnd();
                 return;
             }
 
-            isDrawingRef.current = false;
-            if (!selectionLassoDataRef.current || selectionLassoDataRef.current.length < 6) { // why six?  SEEEVEEEEEEEEN 
+            if (!selectionLassoDataRef.current || selectionLassoDataRef.current.length < 6) { 
                 clearSelection();
                 return;
             }
@@ -505,7 +524,17 @@ export default function Board({ shared = false }) {
             const selected = linesRef.current.filter(l => lineIntersectsOrInsidePolygon(l, lasso));
             const selectedIds = selected.map(l => l.id);
             setSelectedIds(selectedIds);
-            if (selectedIds.length > 0) setSelectionBBox(computeSelectionBBox(selected));
+            
+            if (selectedIds.length > 0) {
+                const rawBBox = computeSelectionBBox(selected);
+                setSelectionBBox({
+                    ...rawBBox,
+                    globalCenterX: rawBBox.x + rawBBox.width / 2,
+                    globalCenterY: rawBBox.y + rawBBox.height / 2
+                });
+                setSelectionBBoxRotation(0);
+            }
+            
             if (selectionLassoRef.current) {
                 selectionLassoRef.current.hide();
                 selectionLassoRef.current.getLayer().batchDraw();
@@ -530,7 +559,6 @@ export default function Board({ shared = false }) {
         setLines((prev) => [...prev, finishedLine]);
         linesRef.current = [...(linesRef.current || []), finishedLine];
        
-
         if (activeLineRef.current) {
             activeLineRef.current.hide();
             activeLineRef.current.getLayer().batchDraw();
@@ -545,14 +573,14 @@ export default function Board({ shared = false }) {
 
         setEditHistory((prev) => {
             let newHistory;
-            if (prev.history.length < NUM_MAX_UNDO) {
-                newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
-            } else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
+            if (prev.history.length < NUM_MAX_UNDO) newHistory = [...prev.history.slice(0, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
+            else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { line: finishedLine, op: "draw" }];
             return { history: newHistory, editIndex: newHistory.length - 1 };
         });
 
         socketRef.current?.emit('board:draw:line', finishedLine);
-    }, []);
+    }, [clearSelection, handleRotationEnd, handleResizeEnd, handleDragEnd, isResizingRef, isRotatingRef, isDraggingSelectionRef]);
+
 
     const handlePointerEnter = useCallback(() => {
         if (eraserCursorRef.current && toolRef.current === 'eraser') {
@@ -605,34 +633,94 @@ export default function Board({ shared = false }) {
             if (last_edit.op === 'draw') {
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
                 socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw' });
-            } else {
+            } 
+            else if (last_edit.op === 'rotate' || last_edit.op === 'drag' || last_edit.op === 'resize') {
+                setLines((prev) => {
+                    return prev.map(l => {
+                        const historyEntry = last_edit.lines.find(entry => entry.prev_line.id === l.id); 
+                        return historyEntry ? historyEntry.prev_line : l;
+                    });
+                });
+                clearSelection();
+                socketRef.current?.emit('board:draw:undo', { op: last_edit.op, line: last_edit.lines });
+            }
+            else if (last_edit.op === 'group_erase') {
+                setLines((prevLines) => {
+                    if (prevLines.some(l => last_edit.lines.some(line => l.id === line.id))) return prevLines;
+                    const newLines = [...prevLines, ...last_edit.lines];
+                    return sortLinesByTime(newLines)
+                });
+                socketRef.current?.emit('board:draw:undo', { op: 'group_erase', line: last_edit.lines }); 
+            }
+            else {
                 setLines((prevLines) => {
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
-                    return [...prevLines, last_edit.line];
+                    const newLines = [...prevLines, last_edit.line];
+                    return sortLinesByTime(newLines)
                 });
                 socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'erase', line: last_edit.line });
             }
             return { history: prevHistory.history, editIndex: prevHistory.editIndex - 1 };
         });
-    }, []);
+    }, [clearSelection, socketRef, setLines]);
 
     const handleRedo = useCallback(() => {
         setEditHistory((prevHistory) => {
             if (prevHistory.history.length === 0 || prevHistory.editIndex === prevHistory.history.length - 1) return prevHistory;
+            
             const last_edit = prevHistory.history.at(prevHistory.editIndex + 1);
             if (last_edit.op === 'draw') {
                 setLines((prevLines) => {
                     if (prevLines.some(l => l.id === last_edit.line.id)) return prevLines;
-                    return [...prevLines, last_edit.line];
+                    const newLines = [...prevLines, last_edit.line];
+                    return sortLinesByTime(newLines) 
                 });
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw', line: last_edit.line });
-            } else {
+            } 
+            else if (last_edit.op === 'rotate' || last_edit.op === 'drag' || last_edit.op === 'resize') {
+                setLines((prev) => {
+                    return prev.map(l => {
+                        const historyEntry = last_edit.lines.find(entry => entry.new_line.id === l.id); 
+                        return historyEntry ? historyEntry.new_line : l;
+                    });
+                });
+                clearSelection();
+                socketRef.current?.emit('board:draw:redo', { op: last_edit.op, line: last_edit.lines });
+            }
+            else if (last_edit.op === 'group_erase') {
+                setLines((prevLines) => prevLines.filter(l => !last_edit.lines.some(line => l.id === line.id)));
+                socketRef.current?.emit('board:draw:redo', { op: 'group_erase', line: last_edit.lines });
+            }
+            else {
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'erase' });
             }
             return { history: prevHistory.history, editIndex: prevHistory.editIndex + 1 };
         });
-    }, []);
+    }, [clearSelection, socketRef, setLines]);
+
+    useEffect(() => {
+        const handleUndoRedoShortcuts = (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+            if (!cmdOrCtrl) return;
+
+            if (e.key.toLowerCase() === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) handleRedo();
+                else handleUndo();
+            }
+            else if (e.key.toLowerCase() === 'y') { 
+                e.preventDefault();
+                handleRedo();
+            }
+        };
+
+        window.addEventListener('keydown', handleUndoRedoShortcuts);
+        return () => window.removeEventListener('keydown', handleUndoRedoShortcuts);
+    }, [handleUndo, handleRedo]);
 
     const activeSize = (tool === 'eraser') ? eraserSize : (tool === 'highlighter') ? highlighterSize : (tool === 'shape') ? shapeWidth : strokeWidth;
     const setActiveSize = (fn) => {
@@ -646,9 +734,7 @@ export default function Board({ shared = false }) {
     };
     const setColor = (fn) => (tool === 'highlighter') ? setHighlighterColor(fn) : setBrushColor(fn);
 
-    useEffect(() => {
-        scrollToBottom();
-    }, [chatMessages]);
+    useEffect(() => { scrollToBottom(); }, [chatMessages]);
 
     const sendMessage = () => {
         if (!inputMessageRef.current) return;
@@ -659,9 +745,21 @@ export default function Board({ shared = false }) {
         setInputMessage("");
     };
 
-    // scroll to bottom of chat div each time a new message is received
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" });
+    const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" }); };
+
+    const handleSBoxRotComponentMouseEnter = (e) => e.target.getStage().container().style.cursor = 'grab';
+    const handleSBoxResizeComponentMouseEnter = (e, current_handle) => {
+        const cursor = getDynamicCursor(current_handle, selectionBBoxRotation);
+        e.target.getStage().container().style.cursor = cursor;
+    };
+    const handleSBoxComponentMouseLeave = (e) => e.target.getStage().container().style.cursor = 'default';
+
+    const handleExitAndSaveThumbnail = () => {
+        clearSelection();
+        setTimeout(() => {
+            saveThumbnail();
+            navigate('/');
+        }, WAIT_BEFORE_EXIT); 
     };
 
     return (
@@ -690,16 +788,23 @@ export default function Board({ shared = false }) {
                 }}
             >
                 <Layer name="draw-layer">
-                    {lines.map((line) => {
+                    {lines.filter(line => !selectedIds.includes(line.id)).map((line) => {
                         if (line.type === 'circle') {
                             const { x_center, y_center, radius } = computeCircleData(line.points);
                             const sw = line.strokeWidth || 0;
                             return (
-                                <Fragment key={line.id}>
+                                <Group
+                                    key={line.id}
+                                    x={line.x || 0}
+                                    y={line.y || 0}
+                                    offsetX={line.offsetX || 0}
+                                    offsetY={line.offsetY || 0}
+                                    rotation={line.rotation || 0}
+                                >
                                     {line.fill && (
                                         <Circle
                                             key={line.id + '_fill'}
-                                            id={line.id}
+                                            id={line.id} 
                                             x={x_center}
                                             y={y_center}
                                             radius={Math.max(0, radius - sw / 2)}
@@ -709,8 +814,7 @@ export default function Board({ shared = false }) {
                                         />
                                     )}
                                     <Circle
-                                        key={line.id}
-                                        id={line.id}
+                                        id={line.id} 
                                         x={x_center}
                                         y={y_center}
                                         radius={radius}
@@ -719,13 +823,13 @@ export default function Board({ shared = false }) {
                                         globalCompositeOperation={line.globalCompositeOperation}
                                         listening={true}
                                     />
-                                </Fragment>
+                                </Group>
                             );
                         }
                         return (
                             <Line
                                 key={line.id}
-                                id={line.id}
+                                id={line.id} 
                                 points={line.points}
                                 stroke={line.color}
                                 fill={line.fill}
@@ -738,8 +842,101 @@ export default function Board({ shared = false }) {
                                 lineCap={line.lineCap}
                                 lineJoin={line.lineJoin}
                                 dash={line.dash}
+                                x={line.x}
+                                y={line.y}
+                                offsetX={line.offsetX}
+                                offsetY={line.offsetY}
+                                rotation={line.rotation}
                                 listening={true}
                             />
+                        );
+                    })}
+
+                    {lines.filter(line => selectedIds.includes(line.id)).map((line) => {
+                        if (line.type === 'circle') {
+                            const { x_center, y_center, radius } = computeCircleData(line.points);
+                            const sw = line.strokeWidth || 0;
+                            return (
+                                <Group
+                                    key={`sel_${line.id}`}
+                                    x={line.x || 0}
+                                    y={line.y || 0}
+                                    offsetX={line.offsetX || 0}
+                                    offsetY={line.offsetY || 0}
+                                    rotation={line.rotation || 0}
+                                >
+                                    <Circle
+                                        x={x_center}
+                                        y={y_center}
+                                        radius={radius}
+                                        stroke="#3b82f6"
+                                        strokeWidth={sw + 12}
+                                        opacity={0.75}
+                                        listening={false} 
+                                    />
+                                
+                                    {line.fill && (
+                                        <Circle
+                                            id={line.id} 
+                                            x={x_center}
+                                            y={y_center}
+                                            radius={Math.max(0, radius - sw / 2)}
+                                            fill={line.fill}
+                                            globalCompositeOperation={line.globalCompositeOperation}
+                                            listening={true}
+                                        />
+                                    )}
+                                    <Circle
+                                        id={line.id} 
+                                        x={x_center}
+                                        y={y_center}
+                                        radius={radius}
+                                        stroke={line.color}
+                                        strokeWidth={sw}
+                                        globalCompositeOperation={line.globalCompositeOperation}
+                                        listening={true}
+                                    />
+                                </Group>
+                            );
+                        }
+                        return (
+                            <Group
+                                key={line.id}
+                                x={line.x || 0}
+                                y={line.y || 0}
+                                offsetX={line.offsetX || 0}
+                                offsetY={line.offsetY || 0}
+                                rotation={line.rotation || 0}
+                            >
+                                <Line
+                                    points={line.points}
+                                    stroke="#3b82f6"
+                                    strokeWidth={(line.strokeWidth || 3) + 12}
+                                    opacity={0.75}
+                                    tension={line.tension}
+                                    closed={line.closed}
+                                    lineCap={line.lineCap}
+                                    lineJoin={line.lineJoin}
+                                    listening={false}
+                                />
+                                
+                                <Line
+                                    id={line.id}
+                                    points={line.points}
+                                    stroke={line.color}
+                                    fill={line.fill}
+                                    strokeWidth={line.strokeWidth}
+                                    opacity={line.opacity}
+                                    hitStrokeWidth={line.hitStrokeWidth}
+                                    tension={line.tension}
+                                    globalCompositeOperation={line.globalCompositeOperation}
+                                    closed={line.closed}
+                                    lineCap={line.lineCap}
+                                    lineJoin={line.lineJoin}
+                                    dash={line.dash}
+                                    listening={true}
+                                />
+                            </Group>
                         );
                     })}
 
@@ -775,9 +972,17 @@ export default function Board({ shared = false }) {
                         visible={false}
                         opacity={0.7}
                     />
+
                     {selectionBBox && (
-                        <>
+                        <Group
+                            x={selectionBBox.globalCenterX !== undefined ? selectionBBox.globalCenterX : selectionBBox.x + selectionBBox.width / 2}
+                            y={selectionBBox.globalCenterY !== undefined ? selectionBBox.globalCenterY : selectionBBox.y + selectionBBox.height / 2}
+                            offsetX={selectionBBox.x + selectionBBox.width / 2}
+                            offsetY={selectionBBox.y + selectionBBox.height / 2}
+                            rotation={selectionBBoxRotation || 0}
+                        >
                             <Rect
+                                name="selection-box"
                                 x={selectionBBox.x}
                                 y={selectionBBox.y}
                                 width={selectionBBox.width}
@@ -785,27 +990,101 @@ export default function Board({ shared = false }) {
                                 stroke={SELECTION_BOX_COLOR}
                                 strokeWidth={1.5}
                                 dash={[6, 3]}
-                                listening={false}
-                                fill="rgba(59, 130, 246, 0.05)"
+                                listening={true}
+                                fill="rgba(59, 130, 246, 0.25)"
                             />
-                        </>
-                    )   
-                    }
 
-                    {selectedIds.length > 0 && lines.filter(l => selectedIds.includes(l.id)).map(l=>(
-                        <Line
-                            key={`sel_${l.id}`}
-                            points={l.points}
-                            stroke="#3b82f6"
-                            strokeWidth={(l.strokeWidth || 3) + 4}
-                            opacity={0.25}
-                            tension={l.tension}
-                            closed={l.closed}
-                            lineCap={l.lineCap}
-                            lineJoin={l.lineJoin}
-                            listening={false}
-                        />
-                    ))}
+                            {[
+
+                                { id: HANDLE_TOP_LEFT, x: selectionBBox.x, y: selectionBBox.y },
+                                { id: HANDLE_TOP, x: selectionBBox.x + selectionBBox.width / 2, y: selectionBBox.y },
+                                { id: HANDLE_TOP_RIGHT, x: selectionBBox.x + selectionBBox.width, y: selectionBBox.y },
+                                { id: HANDLE_RIGHT, x: selectionBBox.x + selectionBBox.width, y: selectionBBox.y + selectionBBox.height / 2 },
+                                { id: HANDLE_BOTTOM_RIGHT, x: selectionBBox.x + selectionBBox.width, y: selectionBBox.y + selectionBBox.height },
+                                { id: HANDLE_BOTTOM, x: selectionBBox.x + selectionBBox.width / 2, y: selectionBBox.y + selectionBBox.height },
+                                { id: HANDLE_BOTTOM_LEFT, x: selectionBBox.x, y: selectionBBox.y + selectionBBox.height },
+                                { id: HANDLE_LEFT, x: selectionBBox.x, y: selectionBBox.y + selectionBBox.height / 2 }
+
+                            ].map((handle) => (
+                                <Rect
+                                    key={handle.id}
+                                    id={handle.id}
+                                    x={handle.x - 4}
+                                    y={handle.y - 4}
+                                    width={RESIZE_HANDLE_WH}  
+                                    height={RESIZE_HANDLE_WH} 
+                                    fill={SELECTION_BOX_COLOR}
+                                    stroke={SELECTION_BOX_COLOR}
+                                    strokeWidth={1}
+                                    onPointerDown={(e) => handleResizeStart(e, handle.id)}
+                                    onTouchStart={(e) => handleResizeStart(e, handle.id)}
+                                    onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, handle.id)}
+                                    onMouseLeave={handleSBoxComponentMouseLeave}
+                                    listening={true}
+                                />
+                            ))}
+
+                            <Line 
+                                points={[
+                                    selectionBBox.x + selectionBBox.width / 2, selectionBBox.y - 25, 
+                                    selectionBBox.x + selectionBBox.width / 2, selectionBBox.y
+                                ]} 
+                                stroke={SELECTION_BOX_COLOR} 
+                                strokeWidth={1} 
+                                dash={[4, 2]} 
+                                listening={false} 
+                            />
+                        
+                            <Group
+                                name="rotation-handler"
+                                x={selectionBBox.x + selectionBBox.width / 2} 
+                                y={selectionBBox.y - 25}
+                                listening={true}
+
+                                onMouseEnter={(e) => {handleSBoxRotComponentMouseEnter(e)}}
+                                onMouseLeave={(e) => {handleSBoxComponentMouseLeave(e)}}
+
+                                onPointerDown={(e) => { 
+                                    e.cancelBubble = true;
+                                    e.evt.preventDefault(); 
+                                    const stage = stageRef.current;
+                                    const pointerScale = stage.scaleX() || 1;
+                                    handleRotationStart(stage.getPointerPosition(), pointerScale);
+                                }}
+
+                                onTouchStart={(e) => {
+                                    e.cancelBubble = true;
+                                    e.evt.preventDefault(); 
+                                    const stage = stageRef.current;
+                                    const pointerScale = stage.scaleX() || 1;
+                                    handleRotationStart(stage.getPointerPosition(), pointerScale);
+                                }}
+
+                            >
+                                <Circle 
+                                    x={0} 
+                                    y={0} 
+                                    radius={12} 
+                                    fill="white" 
+                                    stroke={SELECTION_BOX_COLOR} 
+                                    strokeWidth={1.25} 
+                                />
+
+                                <Text
+                                    x={0} 
+                                    y={0} 
+                                    text="↻" 
+                                    fontSize={18} 
+                                    fill={SELECTION_BOX_COLOR} 
+                                    offsetX={7} 
+                                    offsetY={9.5} 
+                                    fontStyle="normal" 
+                                />
+                            </Group>
+                            
+                        </Group>
+                    )}
+
                 </Layer>
             </Stage>
 
@@ -821,7 +1100,7 @@ export default function Board({ shared = false }) {
             />
 
             <div className="fixed top-2 left-2 flex items-center gap-2 pointer-events-auto z-10">
-                <button onClick={() => { navigate('/'); saveThumbnail(); }} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900">
+                <button onClick={handleExitAndSaveThumbnail} className="p-2 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900">
                     <ArrowLeft size={14} />
                 </button>
                 <div className="px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-900 font-medium shadown-sm max-w-xs truncate">
@@ -835,24 +1114,60 @@ export default function Board({ shared = false }) {
             </div>
 
             <div className="fixed top-2 right-2 flex items-center gap-2 pointer-events-auto z-10">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-500 shadow-sm">
-                    <Users size={14} />
-                    <span>{peers}</span>
-                </div>
-                {!shared && (
-                    <button onClick={() => setShowShareModal(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer"
+    
+                <div className="relative flex flex-col items-end">
+                    
+                    <button 
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer focus:outline-none"
+                        onClick={() => setShowPeers((prev) => !prev)}
                     >
-                        <Share2 size={14} />
-                        Share
+                        <Users size={14} />
+                        <span>{peers}</span> 
                     </button>
-                )}
+
+                    <div 
+                        className={`
+                            absolute top-full right-0 mt-2 p-2 min-w-[180px]
+                            bg-white border border-gray-100 rounded-xl shadow-lg
+                            flex flex-col gap-1 text-sm text-gray-700 max-h-64
+                            transition-all duration-200 origin-top-right z-10 overflow-y-auto
+                            overscroll-contain
+                            ${showPeers 
+                                ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' 
+                                : 'opacity-0 scale-95 -translate-y-2 pointer-events-none'
+                            }
+                        `}
+                    >
+                        <div className="px-2 py-1 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                            Connected users
+                        </div>
+                        
+                            {peerEntries.map((peer) => (
+                                <div 
+                                    key={peer + `${Date.now()}_${Math.random().toString(36).slice(2)}`} 
+                                    className="px-0 py-0.5 rounded-lg hover:bg-gray-50 transition-colors"
+                                >
+                                    <UserEntry username={(peer === user.username) ? peer + " (You)" : peer} />
+                                </div>
+                            ))}
+
+                        </div>
+                    </div>
+
+                    {!shared && (
+                        <button onClick={() => setShowShareModal(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer"
+                        >
+                            <Share2 size={14} />
+                            Share
+                        </button>
+                    )}
             </div>
 
             <div className="fixed bottom-7.5 right-4 flex items-center gap-2 pointer-events-auto z-10">
                 <button
                     onClick={() => setChatOpen((prev) => !prev)} 
-                    className="py-2 px-8 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900"
+                    className="py-2 px-4 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900"
                 >
                     <MessageCircle size={18} />
                 </button>
@@ -863,7 +1178,7 @@ export default function Board({ shared = false }) {
                     fixed bottom-6 right-2 z-20 flex flex-col w-80 md:w-96 h-[92vh]
                     bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden font-sans
                     transition-all duration-300 ease-in-out origin-bottom-right 
-                    ${chatOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}                                                                                                                              
+                    ${chatOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}                                                                                                               
                 `}
             >
                 
@@ -967,35 +1282,4 @@ export default function Board({ shared = false }) {
             )}
         </div>
     );
-}
-
-function SentMessage({time, body}) {
-    return (
-    <div className="flex flex-col w-full min-w-0 space-y-1">
-        <div className="flex items-baseline justify-between space-x-2 px-1 w-full">
-            <span className="text-xs font-medium text-purple-600">You</span>
-            <span className="text-xs text-gray-400">{time}</span>
-        </div>
-
-        <div className="bg-purple-100 border border-purple-200 p-3 rounded-2xl rounded-tr-sm text-sm text-purple-900 shadow-sm w-fit max-w-full break-words whitespace-pre-wrap">
-            {body}
-        </div>
-    </div>
-    )
-}
-
-function ReceivedMessage({username, time, body}) {
-    return (
-        <div className="flex flex-col w-full min-w-0 space-y-1">
-
-            <div className="flex items-baseline justify-between px-1 w-full space-x-2">
-                <span className="text-xs font-medium text-gray-600">{username}</span>
-                <span className="text-xs text-gray-400">{time}</span>
-            </div>
-
-            <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-tl-sm text-sm text-gray-700 shadow-sm w-fit max-w-full break-words whitespace-pre-wrap">
-                {body}
-            </div>
-        </div>
-    )
 }

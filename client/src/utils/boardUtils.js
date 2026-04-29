@@ -1,3 +1,6 @@
+import { HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
+         HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT } from "../utils/boardConstants";
+
 export const hexToRgba = (hex, opacity) => {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
@@ -111,51 +114,128 @@ export function segmentsIntersect(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
     return (t >= 0 && t <= 1 && u >= 0 && u <= 1);
 }
 
+export function segmentIntersectsCircle(x1, y1, x2, y2, cx, cy, r) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const a = dx * dx + dy * dy;
+    
+    if (a === 0) return (x1 - cx) * (x1 - cx) + (y1 - cy) * (y1 - cy) <= r * r;
+    
+    
+    const b = 2 * (dx * (x1 - cx) + dy * (y1 - cy));
+    const c = (x1 - cx) * (x1 - cx) + (y1 - cy) * (y1 - cy) - r * r;
+    const det = b * b - 4 * a * c;
+    
+    if (det < 0) return false;
+    
+    const t1 = (-b + Math.sqrt(det)) / (2 * a);
+    const t2 = (-b - Math.sqrt(det)) / (2 * a);
+    
+    return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
+}
+
 export function lineIntersectsOrInsidePolygon(line, polygon) {
     if (line.type === 'circle') {
         const { x_center, y_center, radius } = computeCircleData(line.points);
-        for (let i = 0; i < 16; i++) {
-            const angle = (2 * Math.PI * i) / 16;
-            if (pointInPolygon(x_center + radius * Math.cos(angle), y_center + radius * Math.sin(angle), polygon)) return true;
-        }
+        
         if (pointInPolygon(x_center, y_center, polygon)) return true;
+        
+        for (let i = 0; i < polygon.length; i += 2) {
+            const dx = polygon[i] - x_center;
+            const dy = polygon[i + 1] - y_center;
+            if (dx * dx + dy * dy <= radius * radius) return true;
+        }
+        
+        for (let j = 0; j < polygon.length; j += 2) {
+            const nj = (j + 2) % polygon.length;
+            if (segmentIntersectsCircle(polygon[j], polygon[j + 1], polygon[nj], polygon[nj + 1], x_center, y_center, radius)) {
+                return true;
+            }
+        }
+        return false;
     }
     else {
-        for (let i = 0; i < line.points.length; i+=2) {
+        for (let i = 0; i < line.points.length; i += 2) {
             if (pointInPolygon(line.points[i], line.points[i + 1], polygon)) return true;
         }
 
-        for (let i = 0; i < line.points.length - 2; i += 2) {
+        const len = line.points.length;
+        const segmentsCount = line.closed ? len : len - 2; 
+        
+        for (let i = 0; i < segmentsCount; i += 2) {
+            const p1x = line.points[i];
+            const p1y = line.points[i + 1];
+            const p2x = line.points[(i + 2) % len];
+            const p2y = line.points[(i + 3) % len];
+            
             for (let j = 0; j < polygon.length; j += 2) {
                 const nj = (j + 2) % polygon.length;
-                if (segmentsIntersect(line.points[i], line.points[i + 1], line.points[i + 2], line.points[i + 3], polygon[j], polygon[j + 1], polygon[nj], polygon[nj + 1])) return true;
+                if (segmentsIntersect(p1x, p1y, p2x, p2y, polygon[j], polygon[j + 1], polygon[nj], polygon[nj + 1])) {
+                    return true;
+                }
             }
         }
-        
     }
     return false;
 }
 
 export function computeSelectionBBox(lines) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity; // just js things
+
+    const rotatePoint = (px, py, originX, originY, angleDeg) => {
+        if (!angleDeg) return { x: px, y: py };
+        const rad = (angleDeg * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        
+        const dx = px - originX;
+        const dy = py - originY;
+        
+        return {
+            x: cos * dx - sin * dy + originX,
+            y: sin * dx + cos * dy + originY
+        };
+    };
+
     for (const line of lines) {
+        const rot = line.rotation || 0;
+        const originX = line.offsetX || 0;
+        const originY = line.offsetY || 0;
+        
+        const shiftX = (line.x || 0) - originX;
+        const shiftY = (line.y || 0) - originY;
+
         if (line.type === 'circle') {
             const { x_center, y_center, radius } = computeCircleData(line.points);
             const sw = line.strokeWidth || 0;
-            minX = Math.min(minX, x_center - radius - sw);
-            minY = Math.min(minY, y_center - radius - sw);
-            maxX = Math.max(maxX, x_center + radius + sw);
-            maxY = Math.max(maxY, y_center + radius + sw);
+            
+            const rotatedCenter = rotatePoint(x_center, y_center, originX, originY, rot);
+            const finalCX = rotatedCenter.x + shiftX;
+            const finalCY = rotatedCenter.y + shiftY;
+
+            minX = Math.min(minX, finalCX - radius - sw);
+            minY = Math.min(minY, finalCY - radius - sw);
+            maxX = Math.max(maxX, finalCX + radius + sw);
+            maxY = Math.max(maxY, finalCY + radius + sw);
+            
         } else {
             const sw = line.strokeWidth || 0;
             for (let i = 0; i < line.points.length; i += 2) {
-                minX = Math.min(minX, line.points[i] - sw);
-                minY = Math.min(minY, line.points[i + 1] - sw);
-                maxX = Math.max(maxX, line.points[i] + sw);
-                maxY = Math.max(maxY, line.points[i + 1] + sw);
+                const px = line.points[i];
+                const py = line.points[i + 1];
+                
+                const rotated = rotatePoint(px, py, originX, originY, rot);
+                const finalX = rotated.x + shiftX;
+                const finalY = rotated.y + shiftY;
+
+                minX = Math.min(minX, finalX - sw);
+                minY = Math.min(minY, finalY - sw);
+                maxX = Math.max(maxX, finalX + sw);
+                maxY = Math.max(maxY, finalY + sw);
             }
         }
     }
+
     const padding = 10;
     return {
         x: minX - padding,
@@ -173,3 +253,43 @@ export function translatePoints(points, dx, dy) {
     }
     return result;
 }
+
+export function rotatePoint (px, py, cx, cy, angleDeg) {
+    const rad = (angleDeg * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const dx = px - cx;
+    const dy = py - cy;
+    return {
+        x: cx + dx * cos - dy * sin,
+        y: cy + dx * sin + dy * cos
+    };
+};
+
+export function getDynamicCursor(handleId, boxRot) {
+    
+        const baseAngles = {
+            [HANDLE_RIGHT]: 0,
+            [HANDLE_BOTTOM_RIGHT]: 45,
+            [HANDLE_BOTTOM]: 90,
+            [HANDLE_BOTTOM_LEFT]: 135,
+            [HANDLE_LEFT]: 180,
+            [HANDLE_TOP_LEFT]: 225,
+            [HANDLE_TOP]: 270,
+            [HANDLE_TOP_RIGHT]: 315
+        };
+
+        let angle = (baseAngles[handleId] + (boxRot || 0)) % 360;
+        if (angle < 0) angle += 360;
+
+        if (angle >= 337.5 || angle < 22.5) return 'ew-resize';
+        if (angle >= 22.5 && angle < 67.5) return 'nwse-resize';
+        if (angle >= 67.5 && angle < 112.5) return 'ns-resize';
+        if (angle >= 112.5 && angle < 157.5) return 'nesw-resize';
+        if (angle >= 157.5 && angle < 202.5) return 'ew-resize';
+        if (angle >= 202.5 && angle < 247.5) return 'nwse-resize';
+        if (angle >= 247.5 && angle < 292.5) return 'ns-resize';
+        if (angle >= 292.5 && angle < 337.5) return 'nesw-resize';
+        
+        return 'default';
+    };

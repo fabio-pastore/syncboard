@@ -4,10 +4,11 @@ import { io } from "socket.io-client";
 import { apiFetch } from "../api";
 import { SOCKET_URL } from "../utils/boardConstants";
 
-export default function useSocket({ id, token, shared }) {
+export default function useSocket({ id, token, shared, onShapeUpdate, reorderLines }) {
     const [board, setBoard] = useState(null);
     const [lines, setLines] = useState([]);
     const [peers, setPeers] = useState(0);
+    const [peerEntries, setPeerEntries] = useState([]);
     const [role, setRole] = useState('editor');
     const [chatMessages, setChatMessages] = useState([]);
     const [error, setError] = useState("");
@@ -30,7 +31,8 @@ export default function useSocket({ id, token, shared }) {
                 } else {
                     boardData = await apiFetch(`/boards/${id}`);
                     setBoard(boardData);
-                    setLines(boardData.content || []);
+                    const boardContent = reorderLines(boardData.content || []);
+                    setLines(boardContent);
                 }
             } catch (error) {
                 console.error("Failed to fetch board data:", error);
@@ -50,13 +52,17 @@ export default function useSocket({ id, token, shared }) {
                 sock.emit('board:join', { boardId: shared ? token : id });
             });
 
-            sock.on('board:load', ({ lines: l, peers: p, role: r }) => {
+            sock.on('board:load', ({ lines: l, count: c, connectedPeers: peers, role: r }) => {
                 setLines(l);
-                setPeers(p);
+                setPeers(c);
+                setPeerEntries(peers);
                 if (r) setRole(r);
             });
 
-            sock.on('board:peers', (count) => setPeers(count));
+            sock.on('board:peers', ({count: c, connectedPeers: peers}) => {
+                setPeers(c);
+                setPeerEntries(peers);
+            });
 
             sock.on('board:draw:line', (line) => {
                 setLines((prev) => {
@@ -69,23 +75,133 @@ export default function useSocket({ id, token, shared }) {
                     }
                     else return [...prev, line];
                 });
+                onShapeUpdate(line.id); // if updated line in any of currently selected lines, clear the selection to avoid display of outdated selectionBBox 
             });
 
             sock.on('board:draw:erase', (lineId) => {
                 setLines((prev) => prev.filter((l) => l.id !== lineId));
+                onShapeUpdate(lineId); // same as above
             });
+
+            sock.on('board:draw:group_drag', (draggedLines) => {
+                if (!draggedLines) return;
+                const lineIds = draggedLines.map(l => l.id);
+                setLines((prev) => {
+                    const newLines = prev.map((l) => {
+                        const line_entry = draggedLines.find(line => line.id === l.id);
+                        return line_entry ? line_entry : l;
+                    });
+                    return reorderLines(newLines);
+                });
+                lineIds.forEach(id => onShapeUpdate(id));
+            });
+
+            sock.on('board:draw:group_rotate', (rotatedLines) => {
+                if (!rotatedLines) return;
+                const lineIds = rotatedLines.map(l => l.id);
+                setLines((prev) => {
+                    const newLines = prev.map(l => {
+                        const line_entry = rotatedLines.find(line => line.id === l.id);
+                        return line_entry ? line_entry : l;
+                    });
+                    return reorderLines(newLines);
+                });
+                lineIds.forEach(id => onShapeUpdate(id));
+            });
+
+            sock.on('board:draw:group_resize', (resizedLines) => {
+                if (!resizedLines) return;
+                const lineIds = resizedLines.map(l => l.id);
+                setLines((prev) => {
+                    const newLines = prev.map(l => {
+                        const line_entry = resizedLines.find(line => line.id === l.id);
+                        return line_entry ? line_entry : l;
+                    });
+                    return reorderLines(newLines);
+                });
+                lineIds.forEach(id => onShapeUpdate(id));
+            });
+            
+            sock.on('board:draw:group_erase', (erasedIds) => {
+                setLines((prev) => prev.filter((l) => !erasedIds.includes(l.id)));
+                erasedIds.forEach(lineId => {
+                    onShapeUpdate(lineId);
+                });
+            });
+
 
             sock.on('board:draw:undo', (data_payload) => {
                 if (!data_payload) return;
                 const { lineId, op, line } = data_payload;
-                if (op === 'draw') setLines((prev) => prev.filter((l) => l.id !== lineId));
-                else setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
+                if (op === 'draw') {
+                    setLines((prev) => prev.filter((l) => l.id !== lineId));
+                    onShapeUpdate(lineId);
+                }
+
+                else if (op === 'rotate' || op === 'drag' || op === 'resize') {
+                    if (!line) return;
+                    const line_pairs = line;
+                    const lineIds = line_pairs.map(entry => entry.prev_line.id);
+                    setLines((prev) => {
+                        const newLines = prev.map(l => {
+                            const line_entry = line_pairs.find(entry => entry.prev_line.id === l.id);
+                            return line_entry ? line_entry.prev_line : l;
+                        });
+                        return reorderLines(newLines);
+                    });
+                    lineIds.forEach(id => onShapeUpdate(id));
+                }
+
+                else if (op === 'group_erase') {
+                    if (!line) return;
+                    const lines = line;
+                    setLines((prev) => {
+                        const newLines = [...prev];
+                        lines.forEach(line => {
+                            if (!newLines.some(l => l.id === line.id)) newLines.push(line); // check if not duplicate
+                        })
+                        return reorderLines(newLines)
+                    })
+                }
+                
+                else {
+                    setLines((prev) => {
+                        const newLines = prev.some(l => l.id === line.id) ? prev : [...prev, line];
+                        return reorderLines(newLines);
+                    });
+                }
             });
 
             sock.on('board:draw:redo', (data_payload) => {
                 if (!data_payload) return;
                 const { lineId, op, line } = data_payload;
-                if (op === 'draw') setLines((prev) => prev.some(l => l.id === line.id) ? prev : [...prev, line]);
+                if (op === 'draw') {
+                    setLines((prev) => {
+                        const newLines = prev.some(l => l.id === line.id) ? prev : [...prev, line];
+                        return reorderLines(newLines);
+                    });
+                }
+
+                else if (op === 'rotate' || op === 'drag' || op === 'resize') {
+                    if (!line) return;
+                    const line_pairs = line;
+                    const lineIds = line_pairs.map(entry => entry.new_line.id);
+                    setLines((prev) => {
+                        const newLines = prev.map(l => {
+                            const line_entry = line_pairs.find(entry => entry.new_line.id === l.id);
+                            return line_entry ? line_entry.new_line : l;
+                        });
+                        return reorderLines(newLines);
+                    });
+                    lineIds.forEach(id => onShapeUpdate(id));
+                }
+
+                else if (op === 'group_erase') {
+                    if (!line) return;
+                    const lines = line;
+                    setLines((prev) => prev.filter((l) => !lines.some(line => line.id === l.id)))
+                }
+
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));
             });
 
@@ -110,5 +226,5 @@ export default function useSocket({ id, token, shared }) {
         return () => { socketRef.current?.disconnect(); };
     }, [id, token, shared]);
 
-    return { board, setBoard, lines, setLines, peers, role, setRole, error, setError, socketRef, chatMessages, setChatMessages };
+    return { board, setBoard, lines, setLines, peers, peerEntries, role, setRole, error, setError, socketRef, chatMessages, setChatMessages };
 }

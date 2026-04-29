@@ -21,6 +21,7 @@ const io = new Server(server, {
 });
 
 const Board = require('./models/Board');
+const User = require('./models/Users');
 
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
@@ -47,14 +48,6 @@ app.get('/api/boards/share/:token', authMiddleware, async (req, res) => {
 app.use('/api/boards', boardRoutes);
 
 app.use('/api/folders', folderRoutes);
-
-app.get('/api/test', authMiddleware, async (req, res) => {
-    const User = require('./models/Users');
-    const user = await User.findById(req.userId).select('-passwordHash');
-    res.status(200).json({ msg: "Authenticated request successful", user });
-});
-
-
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
@@ -106,16 +99,23 @@ io.on('connection', (socket) => {
             socket.data.userId = userId;
             socket.data.isShareToken = !!shareToken;
             socket.data.isOwner = !shareToken && !!userId && board.owner.toString() === userId;
+            const joinedUser = await User.findById(userId).select('username');
+            if (!joinedUser) return socket.emit('error', 'User not found');
+            socket.data.username = joinedUser.username;
 
-            const peers = io.sockets.adapter.rooms.get(roomId)?.size || 1;
-            socket.emit('board:load', { lines: board.content, peers, role });
-            io.to(roomId).emit('board:peers', peers);
+            const peerCount = io.sockets.adapter.rooms.get(roomId)?.size || 1;
+            const sockets = await io.in(roomId).fetchSockets();
+            const connectedPeers = sockets.map((sock) => sock.data.username);
+
+            socket.emit('board:load', { lines: board.content, count: peerCount, connectedPeers: connectedPeers, role: role });
+            io.to(roomId).emit('board:peers', {count: peerCount, connectedPeers: connectedPeers});
+            
         } catch (err) {
             return socket.emit('error', 'Failed to join board');
         }
     });
 
-    socket.on('board:draw:line', async(line) => {
+    socket.on('board:draw:line', async (line) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:line', line);
@@ -123,17 +123,51 @@ io.on('connection', (socket) => {
         await Board.updateOne({ _id: roomId }, { $push: { content: line } });
     });
 
-    socket.on('board:draw:tmpline', async(line) => {
+    socket.on('board:draw:tmpline', async (line) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:line', line);
     });
 
-    socket.on('board:draw:erase', async(lineId ) => {
+    socket.on('board:draw:erase', async (lineId) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:erase', lineId);
         await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } });
+    });
+
+    socket.on('board:draw:group_drag', async (draggedLines) => {
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:draw:group_drag', draggedLines);
+        const oldLineIds = draggedLines.map(line => line.id);
+        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: oldLineIds } } } });
+        await Board.updateOne({ _id: roomId }, { $push: { content: { $each: draggedLines } } });
+    });
+
+    socket.on('board:draw:group_rotate', async (rotatedLines) => {
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:draw:group_rotate', rotatedLines);
+        const oldLineIds = rotatedLines.map(line => line.id);
+        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: oldLineIds } } } });
+        await Board.updateOne({ _id: roomId }, { $push: { content: { $each: rotatedLines } } });
+    });
+
+    socket.on('board:draw:group_resize', async (resizedLines) => {
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:draw:group_resize', resizedLines);
+        const oldLineIds = resizedLines.map(line => line.id);
+        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: oldLineIds } } } });
+        await Board.updateOne({ _id: roomId }, { $push: { content: { $each: resizedLines } } });
+    });
+    
+    socket.on('board:draw:group_erase', async (erasedIds) => {
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:draw:group_erase', erasedIds);
+        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: erasedIds } } } });
     });
 
     socket.on('board:draw:undo', async ({ lineId, op, line }) => {
@@ -143,7 +177,26 @@ io.on('connection', (socket) => {
         if (op === 'draw') {
             socket.to(roomId).emit('board:draw:undo', { lineId, op });
             await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } });
-        } else {
+        } 
+        
+        else if (op === 'rotate' || op === 'drag' || op === 'resize') { 
+            socket.to(roomId).emit('board:draw:undo', { op, line });
+            if (!line) return;
+            const line_pairs = line;
+            const prevLine = line_pairs.map(entry => entry.prev_line);
+            const newLineIds = line_pairs.map(entry => entry.new_line.id);
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: newLineIds } } } });
+            await Board.updateOne({ _id: roomId }, { $push: { content: { $each: prevLine } } });
+        }
+
+        else if (op === 'group_erase') {
+            socket.to(roomId).emit('board:draw:undo', { op, line });
+            if (!line) return;
+            const lines = line;
+            await Board.updateOne({ _id: roomId }, { $push: { content: { $each: lines } } });
+        }
+        
+        else {
             socket.to(roomId).emit('board:draw:undo', { lineId, op, line });
             await Board.updateOne({ _id: roomId }, { $push: { content: line } });
         }
@@ -156,7 +209,26 @@ io.on('connection', (socket) => {
         if (op === 'draw') {
             socket.to(roomId).emit('board:draw:redo', { lineId, op, line });
             await Board.updateOne({ _id: roomId }, { $push: { content: line } }); 
-        } else {
+        } 
+        
+        else if (op === 'rotate' || op === 'drag' || op === 'resize') {
+            socket.to(roomId).emit('board:draw:redo', { op, line });
+            if (!line) return;
+            const line_pairs = line;
+            const oldLineIds = line_pairs.map(entry => entry.prev_line.id);
+            const newLines = line_pairs.map(entry => entry.new_line);
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: oldLineIds } } } });
+            await Board.updateOne({ _id: roomId }, { $push: { content: { $each: newLines } } });
+        }
+
+        else if (op === 'group_erase') {
+            socket.to(roomId).emit('board:draw:redo', { op, line });
+            if (!line) return;
+            const lineIds = line.map(l => l.id);
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: lineIds } } } });
+        }
+        
+        else {
             socket.to(roomId).emit('board:draw:redo', { lineId, op }); 
             await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } }); 
         }
@@ -168,7 +240,7 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('chat:send', {id: id, username: username, time: time, body: body});
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
         const roomId = socket.data.boardId;
         if (!roomId) return;
 
@@ -190,8 +262,11 @@ io.on('connection', (socket) => {
             Board.updateOne({ _id: roomId }, { $pull: { shareTokens: { token: shareToken } } }).catch(() => {});
         }
 
-        const peers = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-        io.to(roomId).emit('board:peers', peers);
+        const peerCount = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+        const sockets = await io.in(roomId).fetchSockets();
+        const connectedPeers = sockets.map((sock) => sock.data.username);
+
+        io.to(roomId).emit('board:peers', {count: peerCount, connectedPeers: connectedPeers});
     });
 
-})
+});
