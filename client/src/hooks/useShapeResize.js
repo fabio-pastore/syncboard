@@ -141,14 +141,42 @@ export default function useShapeResize({
                 if (!oldL) return l;
 
                 const newPoints = new Array(oldL.points.length);
-                for (let i = 0; i < oldL.points.length; i += 2) {
-                    const localP = rotatePoint(oldL.points[i], oldL.points[i+1], globalCx, globalCy, -rotationDeg);
-                    const scaledX = newLocalLeft + (localP.x - localLeft) * scaleX;
-                    const scaledY = newLocalTop + (localP.y - localTop) * scaleY;
-                    const globalP = rotatePoint(scaledX, scaledY, globalCx, globalCy, rotationDeg);
+                
+                if (oldL.type === 'circle') {
                     
-                    newPoints[i] = globalP.x;
-                    newPoints[i+1] = globalP.y;
+                    const cx = oldL.points[0];
+                    const cy = oldL.points[1];
+                    const edgeX = oldL.points[2];
+                    const edgeY = oldL.points[3];
+                    const radius = Math.sqrt((edgeX - cx)**2 + (edgeY - cy)**2);
+                    
+                    const localC = rotatePoint(cx, cy, globalCx, globalCy, -rotationDeg);
+                    const scaledCx = newLocalLeft + (localC.x - localLeft) * scaleX;
+                    const scaledCy = newLocalTop + (localC.y - localTop) * scaleY;
+                    const globalC = rotatePoint(scaledCx, scaledCy, globalCx, globalCy, rotationDeg);
+                    
+                    let rScale = 1;
+                    if ([HANDLE_LEFT, HANDLE_RIGHT].includes(handle)) rScale = Math.abs(scaleX);
+                    else if ([HANDLE_TOP, HANDLE_BOTTOM].includes(handle)) rScale = Math.abs(scaleY);
+                    else rScale = Math.max(Math.abs(scaleX), Math.abs(scaleY));
+                    
+                    const newRadius = radius * rScale;
+                    
+                    newPoints[0] = globalC.x;
+                    newPoints[1] = globalC.y;
+                    newPoints[2] = globalC.x + newRadius;
+                    newPoints[3] = globalC.y;
+                } else {
+
+                    for (let i = 0; i < oldL.points.length; i += 2) {
+                        const localP = rotatePoint(oldL.points[i], oldL.points[i+1], globalCx, globalCy, -rotationDeg);
+                        const scaledX = newLocalLeft + (localP.x - localLeft) * scaleX;
+                        const scaledY = newLocalTop + (localP.y - localTop) * scaleY;
+                        const globalP = rotatePoint(scaledX, scaledY, globalCx, globalCy, rotationDeg);
+                        
+                        newPoints[i] = globalP.x;
+                        newPoints[i+1] = globalP.y;
+                    }
                 }
 
                 let newX = oldL.x, newY = oldL.y;
