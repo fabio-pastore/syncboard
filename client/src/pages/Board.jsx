@@ -725,53 +725,57 @@ export default function Board({ shared = false }) {
         copiedLinesRef.current = linesRef.current?.filter(l => selectedIdsRef.current.includes(l.id));
     }, [copiedLinesRef, numTimesPastedRef]);
 
-    const handlePaste = useCallback(() => { // add socket logic other clients + backend, + bug first paste in one position, second paste in another even though cursor hasn't moved
-        if (copiedLinesRef.current?.length === 0) return;
+    const handlePaste = useCallback(() => { 
+        if (!copiedLinesRef.current?.length) return;
 
         const stage = stageRef.current;
         const pointerPos = stage.getPointerPosition();
         const pointerScale = stage.scaleX() || 1;
-        const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
+        const pos = { 
+            x: (pointerPos.x - stage.x()) / pointerScale, 
+            y: (pointerPos.y - stage.y()) / pointerScale 
+        };
 
-        let linesToAdd = copiedLinesRef.current;
+        const originalCopies = JSON.parse(JSON.stringify(copiedLinesRef.current)); // deep copy
 
-        const referencePointX = linesToAdd[0].points[0];
-        const referencePointY = linesToAdd[0].points[1];
+        const refX = originalCopies[0].points[0];
+        const refY = originalCopies[0].points[1];
 
-        const commonDx = (20 * numTimesPastedRef.current) + pos.x - referencePointX; // if we paste in the same position gradually increase dx
-        const commonDy = pos.y - referencePointY; 
+        const dist = Math.sqrt(
+            Math.pow(lastPastePosRef.current.x - pos.x, 2) + 
+            Math.pow(lastPastePosRef.current.y - pos.y, 2)
+        );
 
-        linesToAdd = linesToAdd.map(l => {
-            return {
-                ...l, 
-                id: `${Date.now()}_${Math.random().toString(36).slice(2)}`,
-                points: translatePoints(l.points, commonDx, commonDy)
-            }
+        if (dist < 30) {
+            numTimesPastedRef.current += 1;
+        } else {
+            numTimesPastedRef.current = 0;
+        }
+
+        const offsetX = 20 * (numTimesPastedRef.current + 1);
+        const commonDx = pos.x - refX + offsetX;
+        const commonDy = pos.y - refY;
+
+        const linesToAdd = originalCopies.map(l => ({
+            ...l,
+            id: `${Date.now()}_${Math.random().toString(36).slice(2)}`, // update id to avoid duplicates
+            points: translatePoints(l.points, commonDx, commonDy)
+        }));
+
+        lastPastePosRef.current = { x: pos.x, y: pos.y };
+
+        setLines(prev => [...prev, ...linesToAdd]);
+        
+        setEditHistory(prev => {
+            const newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linesToAdd, op: "paste" }];
+            if (newHistory.length > NUM_MAX_UNDO) newHistory.shift();
+            return { history: newHistory, editIndex: newHistory.length - 1 };
         });
-
-        setLines((prev) => {
-            const updatedLines = [...prev, ...linesToAdd];
-            return updatedLines;
-        });
-
-        if (Math.abs(lastPastePosRef.current.x - pos.x) < 30 && Math.abs(lastPastePosRef.current.y - pos.y) < 30) numTimesPastedRef.current++;
-        else numTimesPastedRef.current = 0;
-        lastPastePosRef.current = {x: pos.x, y: pos.y};
-
-        setEditHistory((prev) => {
-                let newHistory;
-                if (prev.history.length < NUM_MAX_UNDO) {
-                    newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linesToAdd, op: "paste" }];
-                } else {
-                    newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: linesToAdd, op: "paste" }];
-                }
-                return { history: newHistory, editIndex: newHistory.length - 1 };
-            });
 
         socketRef.current?.emit('board:draw:paste', linesToAdd);
         clearSelection();
 
-    }, [copiedLinesRef, setLines, stageRef, numTimesPastedRef, lastPastePosRef, translatePoints, clearSelection]);
+    }, [copiedLinesRef, stageRef, numTimesPastedRef, lastPastePosRef, translatePoints, clearSelection, setLines]);
 
     useEffect(() => {
         const handleShortcuts = (e) => {
@@ -793,13 +797,11 @@ export default function Board({ shared = false }) {
 
             else if (e.key.toLowerCase() === 'c') {
                 e.preventDefault();
-                console.log("copia");
                 handleCopy();
             }
 
             else if (e.key.toLowerCase() === 'v') {
                 e.preventDefault();
-                console.log("incolla");
                 handlePaste();
             }
 

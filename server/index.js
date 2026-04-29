@@ -171,6 +171,13 @@ io.on('connection', (socket) => {
         await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: erasedIds } } } });
     });
 
+    socket.on('board:draw:paste', async (linesToAdd) => {
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:draw:paste', linesToAdd);
+        await Board.updateOne({ _id: roomId }, { $push: { content: { $each: linesToAdd } } });
+    })
+
     socket.on('board:draw:undo', async ({ lineId, op, line }) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -195,6 +202,13 @@ io.on('connection', (socket) => {
             if (!line) return;
             const lines = line;
             await Board.updateOne({ _id: roomId }, { $push: { content: { $each: lines } } });
+        }
+
+        else if (op === 'paste') {
+            socket.to(roomId).emit('board:draw:undo', { op, line });
+            if (!line) return;
+            const linesToRemoveIds = line.map(l => l.id);
+            await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: linesToRemoveIds } } } });
         }
         
         else {
@@ -227,6 +241,12 @@ io.on('connection', (socket) => {
             if (!line) return;
             const lineIds = line.map(l => l.id);
             await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: lineIds } } } });
+        }
+
+        else if (op === 'paste') {
+            socket.to(roomId).emit('board:draw:redo', { op, line });
+            if (!line) return;
+            await Board.updateOne({ _id: roomId }, { $push: { content: { $each: line } } });
         }
         
         else {

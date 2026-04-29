@@ -129,6 +129,12 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 });
             });
 
+            sock.on('board:draw:paste', (linesToAdd) => {
+                if (!linesToAdd) return;
+                setLines((prev) => {
+                    return [...prev, ...linesToAdd];
+                });
+            });
 
             sock.on('board:draw:undo', (data_payload) => {
                 if (!data_payload) return;
@@ -162,6 +168,13 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                         })
                         return reorderLines(newLines)
                     })
+                }
+
+                else if (op === 'paste') {
+                    if (!line) return;
+                    const lines = line;
+                    setLines((prev) => prev.filter(l => !lines.find(line => line.id === l.id)));
+                    lines.forEach(l => onShapeUpdate(l.id));
                 }
                 
                 else {
@@ -200,6 +213,18 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                     if (!line) return;
                     const lines = line;
                     setLines((prev) => prev.filter((l) => !lines.some(line => line.id === l.id)))
+                }
+
+                else if (op === 'paste') {
+                    if (!line) return;
+                    const lines = line;
+                    setLines((prev) => {
+                        const newLines = [...prev];
+                        lines.forEach(line => {
+                            if (!newLines.some(l => l.id === line.id)) newLines.push(line); // check for duplicate
+                        })
+                        return reorderLines(newLines)
+                    })
                 }
 
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));
