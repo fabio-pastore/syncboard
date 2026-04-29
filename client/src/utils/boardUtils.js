@@ -1,3 +1,6 @@
+import { HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
+         HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT } from "../utils/boardConstants";
+
 export const hexToRgba = (hex, opacity) => {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
@@ -262,3 +265,31 @@ export function rotatePoint (px, py, cx, cy, angleDeg) {
         y: cy + dx * sin + dy * cos
     };
 };
+
+export function getDynamicCursor(handleId, boxRot) {
+    
+        const baseAngles = {
+            [HANDLE_RIGHT]: 0,
+            [HANDLE_BOTTOM_RIGHT]: 45,
+            [HANDLE_BOTTOM]: 90,
+            [HANDLE_BOTTOM_LEFT]: 135,
+            [HANDLE_LEFT]: 180,
+            [HANDLE_TOP_LEFT]: 225,
+            [HANDLE_TOP]: 270,
+            [HANDLE_TOP_RIGHT]: 315
+        };
+
+        let angle = (baseAngles[handleId] + (boxRot || 0)) % 360;
+        if (angle < 0) angle += 360;
+
+        if (angle >= 337.5 || angle < 22.5) return 'ew-resize';
+        if (angle >= 22.5 && angle < 67.5) return 'nwse-resize';
+        if (angle >= 67.5 && angle < 112.5) return 'ns-resize';
+        if (angle >= 112.5 && angle < 157.5) return 'nesw-resize';
+        if (angle >= 157.5 && angle < 202.5) return 'ew-resize';
+        if (angle >= 202.5 && angle < 247.5) return 'nwse-resize';
+        if (angle >= 247.5 && angle < 292.5) return 'ns-resize';
+        if (angle >= 292.5 && angle < 337.5) return 'nesw-resize';
+        
+        return 'default';
+    };

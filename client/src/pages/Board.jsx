@@ -1,17 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Stage, Layer, Line, Circle, Rect, Text, Group } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, MessageCircle, Users, Share2, X, Send, User } from "lucide-react";
+import { ArrowLeft, MessageCircle, Users, Share2, X, Send } from "lucide-react";
 import { useAuth } from '../context/AuthContext';
-import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
-         HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT } from "../utils/boardConstants";
-import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, 
-         lineIntersectsOrInsidePolygon, computeSelectionBBox, rotatePoint, translatePoints } from "../utils/boardUtils";
 import useSocket from "../hooks/useSocket";
 import useExport from "../hooks/useExport";
 import useTouchHandlers from "../hooks/useTouchHandlers";
+import useShapeDrag from "../hooks/useShapeDrag";
+import useShapeRotate from "../hooks/useShapeRotate";
+import useShapeResize from "../hooks/useShapeResize";
 import ShareModal from "../components/board/ShareModal";
 import Toolbar from "../components/board/Toolbar";
+import SentMessage from "../components/board/SentMessage"
+import ReceivedMessage from "../components/board/ReceivedMessage"
+import UserEntry from "../components/board/UserEntry";
+
+import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
+         HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, SELECTION_BOX_COLOR, LASSO_LINE_COLOR, RESIZE_HANDLE_WH } from "../utils/boardConstants";
+
+import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, 
+         lineIntersectsOrInsidePolygon, computeSelectionBBox, getDynamicCursor } from "../utils/boardUtils";
 
 export default function Board({ shared = false }) {
     const { id, token } = useParams();
@@ -40,8 +48,6 @@ export default function Board({ shared = false }) {
     const [showShareModal, setShowShareModal] = useState(false);
     const [lastUpdate, setLastUpdate] = useState(0);
 
-    const LASSO_LINE_COLOR = "#959494"
-    const SELECTION_BOX_COLOR = "#3b82f6"
     const [selectedIds, setSelectedIds] = useState([]);
     const [selectionLasso, setSelectionLasso] = useState(null);
     const [selectionBBox, setSelectionBBox] = useState(null);
@@ -64,30 +70,15 @@ export default function Board({ shared = false }) {
     const stagePositionRef = useRef({ x: 0, y: 0 });
     const pointerTypeRef = useRef('mouse');
     const isPenActiveRef = useRef(false);
-
     const selectionLassoRef = useRef(null);
-    const dragStartRef = useRef(null);
-    const linesBeforeDragRef = useRef([]);
 
     const selectedIdsRef = useRef([]);
     const selectionLassoDataRef = useRef(null);
     const selectionBBoxRef = useRef(null);
-    const isDraggingSelectionRef = useRef(false);
-    
-    const isRotatingRef = useRef(false);
-    const dragStartAngleRef = useRef(0);
-    const initialBoxRotRef = useRef(0);
-    const linesBeforeRotateRef = useRef([]);
-
-    const isResizingRef = useRef(false);
-    const activeResizeHandleRef = useRef(null);
-    const initialBBoxRef = useRef(null);
-    const linesBeforeResizeRef = useRef([]);
 
     useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
     useEffect(() => {selectionBBoxRef.current = selectionBBox}, [selectionBBox]);
-    useEffect(() => {isDraggingSelectionRef.current = isDraggingSelection}, [isDraggingSelection]);
 
     const [chatOpen, setChatOpen] = useState(false);
     const [inputMessage, setInputMessage] = useState("");
@@ -130,6 +121,18 @@ export default function Board({ shared = false }) {
     useEffect(() => { toolRef.current = tool }, [tool]);
     useEffect(() => { shapeRef.current = shape }, [shape]);
 
+    const { isDraggingSelectionRef, handleDragStart, handleDragMove, handleDragEnd } = useShapeDrag({
+        stageRef, linesRef, setLines, selectionBBoxRef, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsDraggingSelection
+    });
+
+    const { isRotatingRef, handleRotationStart, handleRotationDrag, handleRotationEnd } = useShapeRotate({
+        stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBoxRotation, selectedIdsRef, setEditHistory, socketRef
+    });
+
+    const { isResizingRef, handleResizeStart, handleResizeDrag, handleResizeEnd } = useShapeResize({
+        stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef
+    });
+
     useEffect(() => {
         const onKeyDown = (e) => {
             if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
@@ -160,7 +163,7 @@ export default function Board({ shared = false }) {
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [selectedIds]);
+    }, [selectedIds, clearSelection, socketRef, setLines]);
 
     const { touchCountRef } = useTouchHandlers({
         stageRef, setScale, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
@@ -192,293 +195,6 @@ export default function Board({ shared = false }) {
         toolRef.current = tool;
         if (tool !== 'select') clearSelection();
     }, [tool, clearSelection]);
-
-    const handleDragMove = (pointerPos, pointerScale) => {
-        const stage = stageRef.current;
-        const pos = {
-            x: (pointerPos.x - stage.x()) / pointerScale,
-            y: (pointerPos.y - stage.y()) / pointerScale,
-        };
-        const dx = pos.x - dragStartRef.current.x;
-        const dy = pos.y - dragStartRef.current.y;
-        dragStartRef.current = { x: pos.x, y: pos.y };
-
-        setLines(prev => {
-            const updated = prev.map(l => {
-                if (!selectedIdsRef.current.includes(l.id)) return l;
-                const newPoints = translatePoints(l.points, dx, dy);
-                return {
-                    ...l, 
-                    points: newPoints,
-                    x: l.x !== undefined ? l.x + dx : undefined,
-                    y: l.y !== undefined ? l.y + dy : undefined,
-                    offsetX: l.offsetX !== undefined ? l.offsetX + dx : undefined,
-                    offsetY: l.offsetY !== undefined ? l.offsetY + dy : undefined
-                };
-            });
-            linesRef.current = updated;
-            return updated;
-        });
-
-        setSelectionBBox(prev => prev ? {
-            ...prev, 
-            x: prev.x + dx, 
-            y: prev.y + dy,
-            globalCenterX: prev.globalCenterX !== undefined ? prev.globalCenterX + dx : undefined,
-            globalCenterY: prev.globalCenterY !== undefined ? prev.globalCenterY + dy : undefined
-        } : null);
-    };
-
-    const handleRotationStart = (e) => { 
-        const currSelectionBBox = selectionBBoxRef.current;
-        if (!currSelectionBBox) return;
-
-        const stage = stageRef.current;
-        const scale = stage.scaleX() || 1;
-        const pointerPos = stage.getPointerPosition();
-        const virtualX = (pointerPos.x - stage.x()) / scale;
-        const virtualY = (pointerPos.y - stage.y()) / scale;
-        
-        const centerX = currSelectionBBox.globalCenterX !== undefined ? currSelectionBBox.globalCenterX : currSelectionBBox.x + currSelectionBBox.width / 2;
-        const centerY = currSelectionBBox.globalCenterY !== undefined ? currSelectionBBox.globalCenterY : currSelectionBBox.y + currSelectionBBox.height / 2;
-        
-        dragStartAngleRef.current = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
-        initialBoxRotRef.current = selectionBBoxRotation || 0;
-        linesBeforeRotateRef.current = linesRef.current.map(l => ({...l, points: [...l.points]}));
-    };
-
-    const handleRotationDrag = (e) => {
-        const currBBox = selectionBBoxRef.current;
-        if (!currBBox) return;
-
-        const stage = stageRef.current;
-        const scale = stage.scaleX() || 1;
-        const pointerPos = stage.getPointerPosition();
-        const virtualX = (pointerPos.x - stage.x()) / scale;
-        const virtualY = (pointerPos.y - stage.y()) / scale;
-        
-        const centerX = currBBox.globalCenterX !== undefined ? currBBox.globalCenterX : currBBox.x + currBBox.width / 2;
-        const centerY = currBBox.globalCenterY !== undefined ? currBBox.globalCenterY : currBBox.y + currBBox.height / 2;
-        
-        const currentAngle = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
-        let deltaAngle = currentAngle - dragStartAngleRef.current;
-        
-        const newRotation = (initialBoxRotRef.current + deltaAngle) % 360;
-        setSelectionBBoxRotation(newRotation);
-
-        setLines(prev => prev.map(l => {
-            if (!selectedIdsRef.current.includes(l.id)) return l;
-            const originalLine = linesBeforeRotateRef.current.find(old => old.id === l.id);
-            if (!originalLine) return l;
-
-            const newPoints = new Array(originalLine.points.length);
-            for (let i = 0; i < originalLine.points.length; i += 2) {
-                const rotP = rotatePoint(originalLine.points[i], originalLine.points[i+1], centerX, centerY, deltaAngle);
-                newPoints[i] = rotP.x;
-                newPoints[i+1] = rotP.y;
-            }
-
-            let newX = originalLine.x, newY = originalLine.y;
-            let newOffsetX = originalLine.offsetX, newOffsetY = originalLine.offsetY;
-
-            if (originalLine.x !== undefined && originalLine.y !== undefined) {
-                const rotXY = rotatePoint(originalLine.x, originalLine.y, centerX, centerY, deltaAngle);
-                newX = rotXY.x;
-                newY = rotXY.y;
-            }
-            if (originalLine.offsetX !== undefined && originalLine.offsetY !== undefined) {
-                const rotOff = rotatePoint(originalLine.offsetX, originalLine.offsetY, centerX, centerY, deltaAngle);
-                newOffsetX = rotOff.x;
-                newOffsetY = rotOff.y;
-            }
-
-            return { ...l, points: newPoints, x: newX, y: newY, offsetX: newOffsetX, offsetY: newOffsetY };
-        }));
-    };
-
-    const handleRotationEnd = useCallback((e) => {
-        if (!selectionBBoxRef.current) return;
-        const rotatedLinesPairs = selectedIdsRef.current.map(id => {
-            const newLineData = linesRef.current?.find(l => l.id === id);
-            const oldLineData = linesBeforeRotateRef.current?.find(l => l.id === id);
-            if (!newLineData || !oldLineData) return null;
-            return { prev_line: oldLineData, new_line: newLineData };
-        }).filter(Boolean);
-
-        if (rotatedLinesPairs.length > 0) {
-            setEditHistory((prev) => {
-                let newHistory;
-                if (prev.history.length < NUM_MAX_UNDO) {
-                    newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: rotatedLinesPairs, op: "rotate" }];
-                } else {
-                    newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: rotatedLinesPairs, op: "rotate" }];
-                }
-                return { history: newHistory, editIndex: newHistory.length - 1 };
-            });
-            socketRef.current?.emit('board:draw:group_rotate', rotatedLinesPairs.map(p => p.new_line));
-        }
-    }, []);
-
-    const handleResizeStart = useCallback((e, current_handle) => {
-        e.cancelBubble = true;
-        e.evt.preventDefault();
-        isResizingRef.current = true;
-        activeResizeHandleRef.current = current_handle;
-        linesBeforeResizeRef.current = linesRef.current.map(l => ({...l, points: [...l.points]}));
-        initialBBoxRef.current = {...selectionBBoxRef.current};
-        initialBoxRotRef.current = selectionBBoxRotation || 0;
-    }, [selectionBBoxRotation]);
-
-    const handleResizeDrag = (pointerPos, pointerScale) => {
-        const stage = stageRef.current;
-        const handle = activeResizeHandleRef.current;
-        const initBBox = initialBBoxRef.current;
-        const rotationDeg = initialBoxRotRef.current;
-
-        const globalCx = initBBox.globalCenterX !== undefined ? initBBox.globalCenterX : initBBox.x + initBBox.width / 2;
-        const globalCy = initBBox.globalCenterY !== undefined ? initBBox.globalCenterY : initBBox.y + initBBox.height / 2;
-        
-        const rawMouse = {
-            x: (pointerPos.x - stage.x()) / pointerScale,
-            y: (pointerPos.y - stage.y()) / pointerScale
-        };
-
-        const localMouse = rotatePoint(rawMouse.x, rawMouse.y, globalCx, globalCy, -rotationDeg);
-
-        const localLeft = globalCx - initBBox.width / 2;
-        const localRight = globalCx + initBBox.width / 2;
-        const localTop = globalCy - initBBox.height / 2;
-        const localBottom = globalCy + initBBox.height / 2;
-
-        let newLocalLeft = localLeft;
-        let newLocalRight = localRight;
-        let newLocalTop = localTop;
-        let newLocalBottom = localBottom;
-
-        let anchorX, anchorY;
-        switch(handle) {
-            case HANDLE_TOP_LEFT: anchorX = localRight; anchorY = localBottom; break;
-            case HANDLE_TOP: anchorX = null; anchorY = localBottom; break;
-            case HANDLE_TOP_RIGHT: anchorX = localLeft; anchorY = localBottom; break;
-            case HANDLE_RIGHT: anchorX = localLeft; anchorY = null; break;
-            case HANDLE_BOTTOM_RIGHT: anchorX = localLeft; anchorY = localTop; break;
-            case HANDLE_BOTTOM: anchorX = null; anchorY = localTop; break;
-            case HANDLE_BOTTOM_LEFT: anchorX = localRight; anchorY = localTop; break;
-            case HANDLE_LEFT: anchorX = localRight; anchorY = null; break;
-        }
-
-        switch (handle) {
-            case HANDLE_TOP: newLocalTop = localMouse.y; break;
-            case HANDLE_RIGHT: newLocalRight = localMouse.x; break;
-            case HANDLE_BOTTOM: newLocalBottom = localMouse.y; break;
-            case HANDLE_LEFT: newLocalLeft = localMouse.x; break;
-        }
-
-        const isCornerHandle = [HANDLE_BOTTOM_RIGHT, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, HANDLE_BOTTOM_LEFT].includes(handle);
-        if (isCornerHandle) {
-            let diagX = 0, diagY = 0;
-            if (handle === HANDLE_BOTTOM_RIGHT) { diagX = initBBox.width; diagY = initBBox.height; }
-            else if (handle === HANDLE_TOP_LEFT) { diagX = -initBBox.width; diagY = -initBBox.height; }
-            else if (handle === HANDLE_TOP_RIGHT) { diagX = initBBox.width; diagY = -initBBox.height; }
-            else if (handle === HANDLE_BOTTOM_LEFT) { diagX = -initBBox.width; diagY = initBBox.height; }
-
-            const mx = localMouse.x - anchorX;
-            const my = localMouse.y - anchorY;
-
-            const dot = (mx * diagX) + (my * diagY);
-            const diagLengthSq = (diagX * diagX) + (diagY * diagY);
-            
-            const scaleFactor = diagLengthSq > 0 ? (dot / diagLengthSq) : 0;
-
-            const finalDx = diagX * scaleFactor;
-            const finalDy = diagY * scaleFactor;
-
-            if (handle === HANDLE_BOTTOM_RIGHT) {
-                newLocalLeft = anchorX; newLocalRight = anchorX + finalDx;
-                newLocalTop = anchorY; newLocalBottom = anchorY + finalDy;
-            } 
-            else if (handle === HANDLE_TOP_LEFT) {
-                newLocalRight = anchorX; newLocalLeft = anchorX + finalDx;
-                newLocalBottom = anchorY; newLocalTop = anchorY + finalDy;
-            } 
-            else if (handle === HANDLE_TOP_RIGHT) {
-                newLocalLeft = anchorX; newLocalRight = anchorX + finalDx;
-                newLocalBottom = anchorY; newLocalTop = anchorY + finalDy;
-            } 
-            else if (handle === HANDLE_BOTTOM_LEFT) {
-                newLocalRight = anchorX; newLocalLeft = anchorX + finalDx;
-                newLocalTop = anchorY; newLocalBottom = anchorY + finalDy;
-            }
-            else {}
-        }
-
-        const curWidth = newLocalRight - newLocalLeft;
-        const curHeight = newLocalBottom - newLocalTop;
-
-        const scaleX = initBBox.width > 0 ? curWidth / initBBox.width : 1;
-        const scaleY = initBBox.height > 0 ? curHeight / initBBox.height : 1;
-
-        const visualWidth = Math.abs(curWidth);
-        const visualHeight = Math.abs(curHeight);
-
-        const newLocalCx = (newLocalLeft + newLocalRight) / 2;
-        const newLocalCy = (newLocalTop + newLocalBottom) / 2;
-        const newGlobalCenter = rotatePoint(newLocalCx, newLocalCy, globalCx, globalCy, rotationDeg);
-
-        setSelectionBBox(prev => ({
-            ...prev,
-            x: newGlobalCenter.x - visualWidth / 2,
-            y: newGlobalCenter.y - visualHeight / 2,
-            width: visualWidth,
-            height: visualHeight,
-            globalCenterX: newGlobalCenter.x,
-            globalCenterY: newGlobalCenter.y
-        }));
-
-        setLines(prev => {
-            const updated = prev.map(l => {
-                if (!selectedIdsRef.current.includes(l.id)) return l;
-                const oldL = linesBeforeResizeRef.current.find(old => old.id === l.id);
-                if (!oldL) return l;
-
-                const newPoints = new Array(oldL.points.length);
-                for (let i = 0; i < oldL.points.length; i += 2) {
-                    const localP = rotatePoint(oldL.points[i], oldL.points[i+1], globalCx, globalCy, -rotationDeg);
-                    const scaledX = newLocalLeft + (localP.x - localLeft) * scaleX;
-                    const scaledY = newLocalTop + (localP.y - localTop) * scaleY;
-                    const globalP = rotatePoint(scaledX, scaledY, globalCx, globalCy, rotationDeg);
-                    
-                    newPoints[i] = globalP.x;
-                    newPoints[i+1] = globalP.y;
-                }
-
-                let newX = oldL.x, newY = oldL.y;
-                let newOffsetX = oldL.offsetX, newOffsetY = oldL.offsetY;
-
-                if (oldL.x !== undefined && oldL.y !== undefined) {
-                    const localCenter = rotatePoint(oldL.x, oldL.y, globalCx, globalCy, -rotationDeg);
-                    const scaledCx = newLocalLeft + (localCenter.x - localLeft) * scaleX;
-                    const scaledCy = newLocalTop + (localCenter.y - localTop) * scaleY;
-                    const globalCenterP = rotatePoint(scaledCx, scaledCy, globalCx, globalCy, rotationDeg);
-                    newX = globalCenterP.x;
-                    newY = globalCenterP.y;
-                }
-
-                if (oldL.offsetX !== undefined && oldL.offsetY !== undefined) {
-                    const localOff = rotatePoint(oldL.offsetX, oldL.offsetY, globalCx, globalCy, -rotationDeg);
-                    const scaledOffX = newLocalLeft + (localOff.x - localLeft) * scaleX;
-                    const scaledOffY = newLocalTop + (localOff.y - localTop) * scaleY;
-                    const globalOffP = rotatePoint(scaledOffX, scaledOffY, globalCx, globalCy, rotationDeg);
-                    newOffsetX = globalOffP.x;
-                    newOffsetY = globalOffP.y;
-                }
-
-                return { ...l, points: newPoints, x: newX, y: newY, offsetX: newOffsetX, offsetY: newOffsetY };
-            });
-            linesRef.current = updated;
-            return updated;
-        });
-    };
 
     const handlePointerDown = useCallback((e) => {
         if (isPanningRef.current) return;
@@ -553,10 +269,7 @@ export default function Board({ shared = false }) {
         if (toolRef.current === 'select') {
             if (e.target.name() === 'selection-box' && selectionBBoxRef.current) {
                 const pos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
-                setIsDraggingSelection(true);
-                linesBeforeDragRef.current = linesRef.current?.map(line => ({...line, points: [...line.points]}));
-                isDraggingSelectionRef.current = true;
-                dragStartRef.current = { x: pos.x, y: pos.y };
+                handleDragStart(pos);
                 return;
             }
             clearSelection();
@@ -635,7 +348,7 @@ export default function Board({ shared = false }) {
                 activeLineRef.current.getLayer().batchDraw();
             }
         }
-    }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity, clearSelection]);
+    }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity, clearSelection, handleDragStart]);
 
     const handlePointerMove = useCallback((e) => {
         const stage = stageRef.current;
@@ -649,7 +362,7 @@ export default function Board({ shared = false }) {
 
         if (isRotatingRef.current) {
             if (e.evt.preventDefault) e.evt.preventDefault();
-            handleRotationDrag(e);
+            handleRotationDrag(pointerPos, pointerScale);
             return;
         }
 
@@ -695,7 +408,7 @@ export default function Board({ shared = false }) {
         }
 
         if (toolRef.current === 'select') {
-            if (isDraggingSelectionRef.current && dragStartRef.current) {
+            if (isDraggingSelectionRef.current) {
                 handleDragMove(pointerPos, pointerScale);
                 return;
             }
@@ -771,38 +484,16 @@ export default function Board({ shared = false }) {
             socketRef.current?.emit('board:draw:tmpline', activeLineDataRef.current);
             setLastUpdate(now);
         }
-    }, [canDraw, handleResizeDrag, handleDragMove]);
+    }, [canDraw, handleResizeDrag, handleRotationDrag, handleDragMove, isResizingRef, isRotatingRef, isDraggingSelectionRef]);
 
     const handlePointerUp = useCallback((e) => {
         if (isResizingRef.current) {
-            const resizedLinesPairs = selectedIdsRef.current.map(id => {
-                const newLineData = linesRef.current?.find(l => l.id === id);
-                const oldLineData = linesBeforeResizeRef.current?.find(l => l.id === id);
-                if (!newLineData || !oldLineData) return null;
-                if (JSON.stringify(newLineData) === JSON.stringify(oldLineData)) return null;
-                return { prev_line: oldLineData, new_line: newLineData };
-            }).filter(Boolean);
-
-            if (resizedLinesPairs.length > 0) {
-                setEditHistory((prev) => {
-                    let newHistory;
-                    const currentHistory = prev.history.slice(0, prev.editIndex + 1);
-                    if (currentHistory.length < NUM_MAX_UNDO) newHistory = [...currentHistory, { lines: resizedLinesPairs, op: "resize" }];
-                    else newHistory = [...currentHistory.slice(1), { lines: resizedLinesPairs, op: "resize" }];
-                    return { history: newHistory, editIndex: newHistory.length - 1 };
-                });
-                const resizedLines = resizedLinesPairs.map(pair => pair.new_line);
-                socketRef.current?.emit('board:draw:group_resize', resizedLines);
-            }
-
-            isResizingRef.current = false;
-            activeResizeHandleRef.current = null;
+            handleResizeEnd();
             return;
         }
 
         if (isRotatingRef.current) {
-            isRotatingRef.current = false;
-            handleRotationEnd(e);
+            handleRotationEnd();
             return;
         }
 
@@ -820,31 +511,7 @@ export default function Board({ shared = false }) {
 
         if (toolRef.current === 'select') {
             if (isDraggingSelectionRef.current) {
-                setIsDraggingSelection(false);
-                isDraggingSelectionRef.current = false;
-                dragStartRef.current = null;
-
-                const draggedLinesPairs = selectedIdsRef.current.map(id => {
-                    const newLineData = linesRef.current?.find(l => l.id === id);
-                    const oldLineData = linesBeforeDragRef.current?.find(l => l.id === id);
-                    if (!newLineData || !oldLineData) return null;
-                    const hasMovedX = newLineData.x !== oldLineData.x;
-                    const hasMovedY = newLineData.y !== oldLineData.y;
-                    const havePointCoordsMoved = newLineData.points && oldLineData.points &&
-                                                 (newLineData.points[0] !== oldLineData.points[0] || newLineData.points[1] !== oldLineData.points[1]);
-                    if (!hasMovedX && !hasMovedY && !havePointCoordsMoved) return null;
-                    return { prev_line: oldLineData, new_line: newLineData };
-                }).filter(Boolean);
-
-                if (draggedLinesPairs.length > 0) {
-                    setEditHistory((prev) => {
-                        let newHistory;
-                        if (prev.history.length < NUM_MAX_UNDO) newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: draggedLinesPairs, op: "drag" }];
-                        else newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: draggedLinesPairs, op: "drag" }];
-                        return { history: newHistory, editIndex: newHistory.length - 1 };
-                    });  
-                    socketRef.current?.emit('board:draw:group_drag', draggedLinesPairs.map(pair => pair.new_line)); 
-                }
+                handleDragEnd();
                 return;
             }
 
@@ -912,7 +579,7 @@ export default function Board({ shared = false }) {
         });
 
         socketRef.current?.emit('board:draw:line', finishedLine);
-    }, [clearSelection, handleRotationEnd]);
+    }, [clearSelection, handleRotationEnd, handleResizeEnd, handleDragEnd, isResizingRef, isRotatingRef, isDraggingSelectionRef]);
 
 
     const handlePointerEnter = useCallback(() => {
@@ -995,7 +662,7 @@ export default function Board({ shared = false }) {
             }
             return { history: prevHistory.history, editIndex: prevHistory.editIndex - 1 };
         });
-    }, [clearSelection]);
+    }, [clearSelection, socketRef, setLines]);
 
     const handleRedo = useCallback(() => {
         setEditHistory((prevHistory) => {
@@ -1030,7 +697,7 @@ export default function Board({ shared = false }) {
             }
             return { history: prevHistory.history, editIndex: prevHistory.editIndex + 1 };
         });
-    }, [clearSelection]);
+    }, [clearSelection, socketRef, setLines]);
 
     useEffect(() => {
         const handleUndoRedoShortcuts = (e) => {
@@ -1079,33 +746,6 @@ export default function Board({ shared = false }) {
     };
 
     const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" }); };
-
-    const getDynamicCursor = (handleId, boxRot) => {
-        const baseAngles = {
-            [HANDLE_RIGHT]: 0,
-            [HANDLE_BOTTOM_RIGHT]: 45,
-            [HANDLE_BOTTOM]: 90,
-            [HANDLE_BOTTOM_LEFT]: 135,
-            [HANDLE_LEFT]: 180,
-            [HANDLE_TOP_LEFT]: 225,
-            [HANDLE_TOP]: 270,
-            [HANDLE_TOP_RIGHT]: 315
-        };
-
-        let angle = (baseAngles[handleId] + (boxRot || 0)) % 360;
-        if (angle < 0) angle += 360;
-
-        if (angle >= 337.5 || angle < 22.5) return 'ew-resize';
-        if (angle >= 22.5 && angle < 67.5) return 'nwse-resize';
-        if (angle >= 67.5 && angle < 112.5) return 'ns-resize';
-        if (angle >= 112.5 && angle < 157.5) return 'nesw-resize';
-        if (angle >= 157.5 && angle < 202.5) return 'ew-resize';
-        if (angle >= 202.5 && angle < 247.5) return 'nwse-resize';
-        if (angle >= 247.5 && angle < 292.5) return 'ns-resize';
-        if (angle >= 292.5 && angle < 337.5) return 'nesw-resize';
-        
-        return 'default';
-    };
 
     const handleSBoxRotComponentMouseEnter = (e) => e.target.getStage().container().style.cursor = 'grab';
     const handleSBoxResizeComponentMouseEnter = (e, current_handle) => {
@@ -1351,104 +991,38 @@ export default function Board({ shared = false }) {
                                 strokeWidth={1.5}
                                 dash={[6, 3]}
                                 listening={true}
-                                fill="rgba(59, 130, 246, 0.05)"
+                                fill="rgba(59, 130, 246, 0.25)"
                             />
 
-                            <Rect 
-                                id={`${HANDLE_TOP_LEFT}`}
-                                name="resize-handler"
-                                x={selectionBBox.x - 4} y={selectionBBox.y - 4} width={10} height={10} 
-                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
-                                strokeWidth={1} 
-                                onPointerDown={(e) => handleResizeStart(e, HANDLE_TOP_LEFT)} 
-                                onTouchStart={(e) => handleResizeStart(e, HANDLE_TOP_LEFT)} 
-                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_TOP_LEFT)} 
-                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
-                            /> 
+                            {[
 
-                            <Rect 
-                                id={`${HANDLE_TOP_RIGHT}`}
-                                name="resize-handler"
-                                x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y - 4} width={10} height={10} 
-                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
-                                strokeWidth={1} 
-                                onPointerDown={(e) => handleResizeStart(e, HANDLE_TOP_RIGHT)} 
-                                onTouchStart={(e) => handleResizeStart(e, HANDLE_TOP_RIGHT)} 
-                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_TOP_RIGHT)} 
-                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
-                            /> 
+                                { id: HANDLE_TOP_LEFT, x: selectionBBox.x, y: selectionBBox.y },
+                                { id: HANDLE_TOP, x: selectionBBox.x + selectionBBox.width / 2, y: selectionBBox.y },
+                                { id: HANDLE_TOP_RIGHT, x: selectionBBox.x + selectionBBox.width, y: selectionBBox.y },
+                                { id: HANDLE_RIGHT, x: selectionBBox.x + selectionBBox.width, y: selectionBBox.y + selectionBBox.height / 2 },
+                                { id: HANDLE_BOTTOM_RIGHT, x: selectionBBox.x + selectionBBox.width, y: selectionBBox.y + selectionBBox.height },
+                                { id: HANDLE_BOTTOM, x: selectionBBox.x + selectionBBox.width / 2, y: selectionBBox.y + selectionBBox.height },
+                                { id: HANDLE_BOTTOM_LEFT, x: selectionBBox.x, y: selectionBBox.y + selectionBBox.height },
+                                { id: HANDLE_LEFT, x: selectionBBox.x, y: selectionBBox.y + selectionBBox.height / 2 }
 
-                            <Rect
-                                id={`${HANDLE_BOTTOM_LEFT}`} 
-                                name="resize-handler"
-                                x={selectionBBox.x - 4} y={selectionBBox.y + selectionBBox.height - 4} width={10} height={10} 
-                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
-                                strokeWidth={1} 
-                                onPointerDown={(e) => handleResizeStart(e, HANDLE_BOTTOM_LEFT)} 
-                                onTouchStart={(e) => handleResizeStart(e, HANDLE_BOTTOM_LEFT)} 
-                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_BOTTOM_LEFT)}
-                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
-                            /> 
-
-                            <Rect
-                                id={`${HANDLE_BOTTOM_RIGHT}`}  
-                                name="resize-handler"
-                                x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y + selectionBBox.height - 4} width={10} height={10} 
-                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
-                                strokeWidth={1} 
-                                onPointerDown={(e) => handleResizeStart(e, HANDLE_BOTTOM_RIGHT)} 
-                                onTouchStart={(e) => handleResizeStart(e, HANDLE_BOTTOM_RIGHT)} 
-                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_BOTTOM_RIGHT)}
-                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
-                            /> 
-
-                            <Rect 
-                                id={`${HANDLE_TOP}`}  
-                                name="resize-handler"
-                                x={selectionBBox.x + selectionBBox.width / 2 - 4} y={selectionBBox.y - 4} width={10} height={10} 
-                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
-                                strokeWidth={1} 
-                                onPointerDown={(e) => handleResizeStart(e, HANDLE_TOP)} 
-                                onTouchStart={(e) => handleResizeStart(e, HANDLE_TOP)} 
-                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_TOP)}
-                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
-                            /> 
-
-                            <Rect 
-                                id={`${HANDLE_BOTTOM}`} 
-                                name="resize-handler"
-                                x={selectionBBox.x + selectionBBox.width / 2 - 4} y={selectionBBox.y + selectionBBox.height - 4} width={10} height={10} 
-                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
-                                strokeWidth={1} 
-                                onPointerDown={(e) => handleResizeStart(e, HANDLE_BOTTOM)} 
-                                onTouchStart={(e) => handleResizeStart(e, HANDLE_BOTTOM)} 
-                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_BOTTOM)}
-                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
-                            />
-
-                            <Rect 
-                                id={`${HANDLE_LEFT}`}  
-                                name="resize-handler"
-                                x={selectionBBox.x - 4} y={selectionBBox.y + selectionBBox.height / 2 - 4} width={10} height={10} 
-                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
-                                strokeWidth={1} 
-                                onPointerDown={(e) => handleResizeStart(e, HANDLE_LEFT)} 
-                                onTouchStart={(e) => handleResizeStart(e, HANDLE_LEFT)} 
-                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_LEFT)}
-                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
-                            />
-
-                            <Rect
-                                id={`${HANDLE_RIGHT}`}   
-                                name="resize-handler"
-                                x={selectionBBox.x + selectionBBox.width - 4} y={selectionBBox.y + selectionBBox.height / 2 - 4} width={10} height={10} 
-                                fill={SELECTION_BOX_COLOR} stroke={SELECTION_BOX_COLOR} 
-                                strokeWidth={1} 
-                                onPointerDown={(e) => handleResizeStart(e, HANDLE_RIGHT)} 
-                                onTouchStart={(e) => handleResizeStart(e, HANDLE_RIGHT)} 
-                                onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, HANDLE_RIGHT)}
-                                onMouseLeave={handleSBoxComponentMouseLeave} listening={true}
-                            /> 
+                            ].map((handle) => (
+                                <Rect
+                                    key={handle.id}
+                                    id={handle.id}
+                                    x={handle.x - 4}
+                                    y={handle.y - 4}
+                                    width={RESIZE_HANDLE_WH}  
+                                    height={RESIZE_HANDLE_WH} 
+                                    fill={SELECTION_BOX_COLOR}
+                                    stroke={SELECTION_BOX_COLOR}
+                                    strokeWidth={1}
+                                    onPointerDown={(e) => handleResizeStart(e, handle.id)}
+                                    onTouchStart={(e) => handleResizeStart(e, handle.id)}
+                                    onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, handle.id)}
+                                    onMouseLeave={handleSBoxComponentMouseLeave}
+                                    listening={true}
+                                />
+                            ))}
 
                             <Line 
                                 points={[
@@ -1473,15 +1047,17 @@ export default function Board({ shared = false }) {
                                 onPointerDown={(e) => { 
                                     e.cancelBubble = true;
                                     e.evt.preventDefault(); 
-                                    isRotatingRef.current = true;
-                                    handleRotationStart(e);
+                                    const stage = stageRef.current;
+                                    const pointerScale = stage.scaleX() || 1;
+                                    handleRotationStart(stage.getPointerPosition(), pointerScale);
                                 }}
 
                                 onTouchStart={(e) => {
                                     e.cancelBubble = true;
                                     e.evt.preventDefault(); 
-                                    isRotatingRef.current = true;
-                                    handleRotationStart(e);
+                                    const stage = stageRef.current;
+                                    const pointerScale = stage.scaleX() || 1;
+                                    handleRotationStart(stage.getPointerPosition(), pointerScale);
                                 }}
 
                             >
@@ -1706,43 +1282,4 @@ export default function Board({ shared = false }) {
             )}
         </div>
     );
-}
-
-function SentMessage({time, body}) {
-    return (
-    <div className="flex flex-col w-full min-w-0 space-y-1">
-        <div className="flex items-baseline justify-between space-x-2 px-1 w-full">
-            <span className="text-xs font-medium text-purple-600">You</span>
-            <span className="text-xs text-gray-400">{time}</span>
-        </div>
-
-        <div className="bg-purple-100 border border-purple-200 p-3 rounded-2xl rounded-tr-sm text-sm text-purple-900 shadow-sm w-fit max-w-full break-words whitespace-pre-wrap">
-            {body}
-        </div>
-    </div>
-    )
-}
-
-function ReceivedMessage({username, time, body}) {
-    return (
-        <div className="flex flex-col w-full min-w-0 space-y-1">
-
-            <div className="flex items-baseline justify-between px-1 w-full space-x-2">
-                <span className="text-xs font-medium text-gray-600">{username}</span>
-                <span className="text-xs text-gray-400">{time}</span>
-            </div>
-
-            <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-tl-sm text-sm text-gray-700 shadow-sm w-fit max-w-full break-words whitespace-pre-wrap">
-                {body}
-            </div>
-        </div>
-    )
-}
-
-function UserEntry({username}) {
-    return (
-        <div className='px-2'>
-            <User className='inline' size={16} /> {username}
-        </div>
-    )
 }
