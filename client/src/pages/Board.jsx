@@ -157,6 +157,42 @@ export default function Board({ shared = false }) {
         stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsManipulating 
     });
 
+    const handleModifySelection = useCallback((newColor, newStrokeWidth, newOpacity) => {
+        if (selectedIdsRef.current.length === 0) return;
+
+        const linePairs = selectedIdsRef.current?.map(id => {
+            const oldLine = linesRef.current?.find(line => line.id === id);
+            const modifiedLine = {...oldLine, color: newColor, strokeWidth: newStrokeWidth, opacity: newOpacity};
+            if (!oldLine || !modifiedLine) return null;
+            return {prev_line: oldLine, new_line: modifiedLine}; 
+        }).filter(Boolean); // remove null values
+
+        setLines((prev) => {
+            const newLines = linePairs.map(entry => entry.new_line);
+            const updatedLines = prev.map(l => {
+                const foundLine = newLines.find(line => line.id === l.id);
+                return foundLine ? foundLine : l;
+            });
+            return sortLinesByTime(updatedLines);
+        });
+            
+        if (linePairs.length > 0) {
+            setEditHistory((prev) => {
+                let newHistory;
+                if (prev.history.length < NUM_MAX_UNDO) {
+                    newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linePairs, op: "modify_selection" }];
+                } else {
+                    newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: linePairs, op: "modify_selection" }];
+                }
+                return { history: newHistory, editIndex: newHistory.length - 1 };
+            });
+        }
+
+        clearSelection();
+        socketRef.current?.emit('board:draw:modify_selection', linePairs.map(entry => entry.new_line));
+
+    }, [selectedIdsRef, linesRef, setEditHistory, socketRef, clearSelection])
+
     const handleDeleteSelection = useCallback(() => {
         if (selectedIdsRef.current.length === 0) return;
 
@@ -677,7 +713,7 @@ export default function Board({ shared = false }) {
                 setLines((prevLines) => prevLines.filter(l => l.id !== last_edit.line.id));
                 socketRef.current?.emit('board:draw:undo', { lineId: last_edit.line.id, op: 'draw' });
             } 
-            else if (last_edit.op === 'rotate' || last_edit.op === 'drag' || last_edit.op === 'resize') {
+            else if (last_edit.op === 'rotate' || last_edit.op === 'drag' || last_edit.op === 'resize' || last_edit.op === 'modify_selection') {
                 setLines((prev) => {
                     return prev.map(l => {
                         const historyEntry = last_edit.lines.find(entry => entry.prev_line.id === l.id); 
@@ -729,7 +765,7 @@ export default function Board({ shared = false }) {
                 });
                 socketRef.current?.emit('board:draw:redo', { lineId: last_edit.line.id, op: 'draw', line: last_edit.line });
             } 
-            else if (last_edit.op === 'rotate' || last_edit.op === 'drag' || last_edit.op === 'resize') {
+            else if (last_edit.op === 'rotate' || last_edit.op === 'drag' || last_edit.op === 'resize' || last_edit.op === 'modify_selection') {
                 setLines((prev) => {
                     return prev.map(l => {
                         const historyEntry = last_edit.lines.find(entry => entry.new_line.id === l.id); 
@@ -1505,6 +1541,7 @@ export default function Board({ shared = false }) {
             <SelectionContextMenu 
                 visible={selectionMenuVisible}
                 onCopy={handleCopy}
+                onModify={handleModifySelection}
                 onDelete={handleDeleteSelection}
                 position={selectionMenuPosition}
             />

@@ -139,6 +139,15 @@ io.on('connection', (socket) => {
         await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } });
     });
 
+    socket.on('board:draw:modify_selection', async (modifiedLines) => {
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:draw:modify_selection', modifiedLines);
+        const oldLineIds = modifiedLines.map(line => line.id);
+        await Board.updateOne({ _id: roomId }, { $pull: { content: { id: { $in: oldLineIds } } } });
+        await Board.updateOne({ _id: roomId }, { $push: { content: { $each: modifiedLines } } });
+    });
+
     socket.on('board:draw:group_drag', async (draggedLines) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -189,7 +198,7 @@ io.on('connection', (socket) => {
             await Board.updateOne({ _id: roomId }, { $pull: { content: { id: lineId } } });
         } 
         
-        else if (op === 'rotate' || op === 'drag' || op === 'resize') { 
+        else if (op === 'rotate' || op === 'drag' || op === 'resize' || op === 'modify_selection') { 
             socket.to(roomId).emit('board:draw:undo', { op, line });
             if (!line) return;
             const line_pairs = line;
@@ -228,7 +237,7 @@ io.on('connection', (socket) => {
             await Board.updateOne({ _id: roomId }, { $push: { content: line } }); 
         } 
         
-        else if (op === 'rotate' || op === 'drag' || op === 'resize') {
+        else if (op === 'rotate' || op === 'drag' || op === 'resize' || op === 'modify_selection') {
             socket.to(roomId).emit('board:draw:redo', { op, line });
             if (!line) return;
             const line_pairs = line;
