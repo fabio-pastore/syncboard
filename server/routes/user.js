@@ -21,12 +21,20 @@ router.get('/profile', async (req, res) => {
 });
 
 // PUT /api/user/profile
+const MAX_PROFILE_IMAGE_SIZE = 500000; // ~500KB for base64 string
+
 router.put('/profile', async (req, res) => {
     try {
-        const { username, email, password } = req.body;
+        const { username, email, password, profileImage } = req.body;
         const updates = {};
         if (username) updates.username = username;
         if (email) updates.email = email;
+        if (profileImage !== undefined) {
+            if (profileImage !== null && typeof profileImage === 'string' && profileImage.length > MAX_PROFILE_IMAGE_SIZE) {
+                return res.status(400).json({ message: 'Profile image is too large' });
+            }
+            updates.profileImage = profileImage;
+        }
         if (password) {
             if (password.length < 6) {
                 return res.status(400).json({ message: 'Password must be at least 6 characters' });

@@ -6,7 +6,6 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
-import Profile from './pages/Profile';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -20,7 +19,6 @@ export default function App() {
       <Route path='/dashboard' element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/board/:id" element={<ProtectedRoute><Board /></ProtectedRoute>} />
       <Route path="/board/share/:token" element={<ProtectedRoute><Board shared /></ProtectedRoute>} />
-      <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
       <Route path='*' element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
     </Routes>
   )

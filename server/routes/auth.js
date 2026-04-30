@@ -35,6 +35,7 @@ router.post('/signup', async (req, res) => {
                 id: user._id,
                 email: user.email,
                 username: user.username,
+                profileImage: user.profileImage,
             }
         })
     } catch (err) {
@@ -68,6 +69,7 @@ router.post('/login', async (req, res) => {
                 id: user._id,
                 email: user.email,
                 username: user.username,
+                profileImage: user.profileImage,
             }
         })
     } catch(err) {

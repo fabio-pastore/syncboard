@@ -47,7 +47,8 @@ export function AuthProvider({ children }) {
         const newUser = {
             id: updatedUser._id, 
             email: updatedUser.email, 
-            username: updatedUser.username
+            username: updatedUser.username,
+            profileImage: updatedUser.profileImage || null,
         };
         localStorage.setItem('user', JSON.stringify(newUser));
         setUser(newUser);
