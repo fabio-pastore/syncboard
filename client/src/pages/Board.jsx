@@ -15,6 +15,7 @@ import SentMessage from "../components/board/SentMessage"
 import ReceivedMessage from "../components/board/ReceivedMessage"
 import UserEntry from "../components/board/UserEntry";
 import SelectionContextMenu from "../components/board/SelectionContextMenu";
+import StageContextMenu from "../components/board/StageContextMenu";
 
 import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
          HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, SELECTION_BOX_COLOR, LASSO_LINE_COLOR, RESIZE_HANDLE_WH } from "../utils/boardConstants";
@@ -50,6 +51,7 @@ export default function Board({ shared = false }) {
     const [lastUpdate, setLastUpdate] = useState(0);
 
     const [isManipulating, setIsManipulating] = useState(false);
+    const [isOpenContextMenu, setIsOpenContextMenu] = useState(false);
 
     const [selectedIds, setSelectedIds] = useState([]);
     const [selectionLasso, setSelectionLasso] = useState(null);
@@ -82,6 +84,9 @@ export default function Board({ shared = false }) {
     const copiedLinesRef = useRef([]);
     const numTimesPastedRef = useRef(null);
     const lastPastePosRef = useRef({x: 0, y: 0});
+
+    const rightClickPosRef = useRef({x: 0, y: 0});
+    const rightClickScreenPosRef = useRef({x: 0,y: 0});
 
     useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
@@ -206,9 +211,11 @@ export default function Board({ shared = false }) {
     useEffect(() => {
         toolRef.current = tool;
         if (tool !== 'select') clearSelection();
+        setIsOpenContextMenu(false);
     }, [tool, clearSelection]);
 
     const handlePointerDown = useCallback((e) => {
+        setIsOpenContextMenu(false);
         if (isPanningRef.current) return;
         if (e.target !== e.target.getStage() && e.target.name() !== 'selection-box' && !e.target.id()) return;
         if (e.evt.pointerType === 'touch' && touchCountRef.current >= 1) return;
@@ -640,6 +647,7 @@ export default function Board({ shared = false }) {
     }, []);
 
     const handleUndo = useCallback(() => {
+        setIsOpenContextMenu(false);
         setEditHistory((prevHistory) => {
             if (prevHistory.history.length === 0 || prevHistory.editIndex === -1) return prevHistory;
             const curr_edit_indx = prevHistory.editIndex;
@@ -687,6 +695,7 @@ export default function Board({ shared = false }) {
     }, [clearSelection, socketRef, setLines]);
 
     const handleRedo = useCallback(() => {
+        setIsOpenContextMenu(false);
         setEditHistory((prevHistory) => {
             if (prevHistory.history.length === 0 || prevHistory.editIndex === prevHistory.history.length - 1) return prevHistory;
             
@@ -729,23 +738,28 @@ export default function Board({ shared = false }) {
         });
     }, [clearSelection, socketRef, setLines]);
 
-    const handleCopy = useCallback(() => {
+    const handleCopy = useCallback((clickedFromMenu=false) => {
         if (!selectedIdsRef.current?.length > 0) return;
+        if (clickedFromMenu) clearSelection();
         numTimesPastedRef.current = 0;
         copiedLinesRef.current = linesRef.current?.filter(l => selectedIdsRef.current.includes(l.id));
     }, [copiedLinesRef, numTimesPastedRef]);
 
-    const handlePaste = useCallback(() => { 
+    const handlePaste = useCallback((overridePos = null) => { 
         if (!copiedLinesRef.current?.length) return;
 
-        const stage = stageRef.current;
-        const pointerPos = stage.getPointerPosition();
-        const pointerScale = stage.scaleX() || 1;
-        const pos = { 
-            x: (pointerPos.x - stage.x()) / pointerScale, 
-            y: (pointerPos.y - stage.y()) / pointerScale 
-        };
-
+        let pos;
+        if (overridePos) pos = overridePos;
+        else {
+            const stage = stageRef.current;
+            const pointerPos = stage.getPointerPosition();
+            const pointerScale = stage.scaleX() || 1;
+            pos = { 
+                x: (pointerPos.x - stage.x()) / pointerScale, 
+                y: (pointerPos.y - stage.y()) / pointerScale 
+            };
+        }
+        
         const originalCopies = JSON.parse(JSON.stringify(copiedLinesRef.current)); // deep copy
 
         const refX = originalCopies[0].points[0];
@@ -784,8 +798,7 @@ export default function Board({ shared = false }) {
 
         socketRef.current?.emit('board:draw:paste', linesToAdd);
         clearSelection();
-
-    }, [copiedLinesRef, stageRef, numTimesPastedRef, lastPastePosRef, translatePoints, clearSelection, setLines]);
+    }, [clearSelection, setLines, copiedLinesRef, stageRef, numTimesPastedRef, lastPastePosRef, translatePoints]);
 
     useEffect(() => {
         const handleShortcuts = (e) => {
@@ -824,6 +837,7 @@ export default function Board({ shared = false }) {
 
     const activeSize = (tool === 'eraser') ? eraserSize : (tool === 'highlighter') ? highlighterSize : (tool === 'shape') ? shapeWidth : strokeWidth;
     const setActiveSize = (fn) => {
+        setIsOpenContextMenu(false);
         switch (toolRef.current) {
             case 'pen': setStrokeWidth(fn); break;
             case 'highlighter': setHighlighterSize(fn); break;
@@ -832,7 +846,11 @@ export default function Board({ shared = false }) {
             default: console.error("[SyncBoard] Unknown tool selected!");
         }
     };
-    const setColor = (fn) => (tool === 'highlighter') ? setHighlighterColor(fn) : setBrushColor(fn);
+    const setColor = (fn) => {
+        if (tool === 'highlighter') setHighlighterColor(fn)
+        else setBrushColor(fn)
+        setIsOpenContextMenu(false);
+    };
 
     useEffect(() => { scrollToBottom(); }, [chatMessages]);
 
@@ -861,20 +879,61 @@ export default function Board({ shared = false }) {
             navigate('/');
         }, WAIT_BEFORE_EXIT); 
     };
+
     const selectionMenuVisible = selectedIds.length > 0 && selectionBBox && !isManipulating;
     const selectionMenuPosition = (() => {
         if (!selectionBBox) return { x: 0, y: 0 };
         const stage = stageRef.current;
         if (!stage) return { x: 0, y: 0 };
         const s = stage.scaleX() || 1;
-        const cx = (selectionBBox.globalCenterX ?? (selectionBBox.x + selectionBBox.width / 2));
-        const topY = (selectionBBox.globalCenterY ?? (selectionBBox.y + selectionBBox.height / 2)) - selectionBBox.height / 2;
-        return {
-            x: cx * s + stage.x(),
-            y: topY * s + stage.y() - 50,
-        };
-    })();
 
+        const cx = selectionBBox.globalCenterX ?? (selectionBBox.x + selectionBBox.width / 2);
+        const cy = selectionBBox.globalCenterY ?? (selectionBBox.y + selectionBBox.height / 2);
+        const hw = selectionBBox.width / 2;
+        const hh = selectionBBox.height / 2;
+
+        const angle = (selectionBBoxRotation || 0) * Math.PI / 180;
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+
+        const handleLocalPositions = [[-hw,-hh],[0,-hh],[hw,-hh],[hw,0],[hw,hh],[0,hh],[-hw,hh],[-hw,0],[0,-hh-25]];
+        let my = Infinity;
+        for (const [lx,ly] of handleLocalPositions) {
+            const ry = lx * sinA + ly * cosA;
+            if (ry < my) my = ry;
+        }
+
+        let x = cx * s + stage.x();
+        let y = (cy + my) * s + stage.y() - 25;
+        
+        const menuWidth = 90, menuHeight = 44, padding = 8; // stima della grandezza
+        x = Math.max(menuWidth / 2 + padding, Math.min(x, window.innerWidth - menuWidth / 2 - padding));
+        y = Math.max(menuHeight + padding, Math.min(y, window.innerHeight - padding));
+
+        return {x, y};
+    })();
+    
+    const handleContextMenuOpen = (e) => {
+        e.evt.preventDefault();
+        if (isManipulating || selectionBBox) return;
+
+        const stage = stageRef.current;
+        const pointerPos = stage.getPointerPosition();
+        const pointerScale = stage.scaleX() || 1;
+
+        rightClickPosRef.current = {
+            x: (pointerPos.x - stage.x()) / pointerScale,
+            y: (pointerPos.y - stage.y()) / pointerScale
+        };
+
+        rightClickScreenPosRef.current = {
+            x: e.evt.clientX,
+            y: e.evt.clientY,
+        };
+
+        setIsOpenContextMenu(true);
+    }
+    
     return (
         <div className="h-screen overflow-hidden relative bg-white" style={{ height: '100dvh' }} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}>
 
@@ -894,6 +953,7 @@ export default function Board({ shared = false }) {
                 onMouseEnter={handlePointerEnter}
                 onMouseLeave={handlePointerLeave}
                 onWheel={handleWheel}
+                onContextMenu={(e) => handleContextMenuOpen(e)}
                 style={{
                     cursor: (tool === 'eraser') ? 'none' : (tool === 'select') ? 'default' : (canDraw ?   'crosshair' : 'default'),
                     display: 'block',
@@ -1235,7 +1295,7 @@ export default function Board({ shared = false }) {
                     
                     <button 
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer focus:outline-none"
-                        onClick={() => setShowPeers((prev) => !prev)}
+                        onClick={() => {setShowPeers((prev) => !prev); setIsOpenContextMenu(false);}}
                     >
                         <Users size={14} />
                         <span>{peers}</span> 
@@ -1271,7 +1331,7 @@ export default function Board({ shared = false }) {
                     </div>
 
                     {!shared && (
-                        <button onClick={() => setShowShareModal(true)}
+                        <button onClick={() => {setShowShareModal(true); setIsOpenContextMenu(false);}}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer"
                         >
                             <Share2 size={14} />
@@ -1282,7 +1342,7 @@ export default function Board({ shared = false }) {
 
             <div className="fixed bottom-7.5 right-4 flex items-center gap-2 pointer-events-auto z-10">
                 <button
-                    onClick={() => setChatOpen((prev) => !prev)} 
+                    onClick={() => {setChatOpen((prev) => !prev); setIsOpenContextMenu(false);}} 
                     className="py-2 px-4 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900"
                 >
                     <MessageCircle size={18} />
@@ -1402,6 +1462,17 @@ export default function Board({ shared = false }) {
                 onDelete={handleDeleteSelection}
                 position={selectionMenuPosition}
             />
+
+            <StageContextMenu
+                visible={isOpenContextMenu}
+                disabled={copiedLinesRef.current.length === 0}
+                onPaste={() => {
+                    handlePaste(rightClickPosRef.current, true);
+                    setIsOpenContextMenu(false);
+                }}
+                position={rightClickScreenPosRef.current}
+                onClose={() => setIsOpenContextMenu(false)}
+            />                
         </div>
     );
 }
