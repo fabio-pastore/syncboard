@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Stage, Layer, Line, Circle, Rect, Text, Group } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, MessageCircle, Users, Share2, X, Send } from "lucide-react";
+import { ArrowLeft, MessageCircle, Users, Share2, X, Send, Copy, Trash2} from "lucide-react";
 import { useAuth } from '../context/AuthContext';
 import useSocket from "../hooks/useSocket";
 import useExport from "../hooks/useExport";
@@ -14,6 +14,7 @@ import Toolbar from "../components/board/Toolbar";
 import SentMessage from "../components/board/SentMessage"
 import ReceivedMessage from "../components/board/ReceivedMessage"
 import UserEntry from "../components/board/UserEntry";
+import SelectionContextMenu from "../components/board/SelectionContextMenu";
 
 import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
          HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, SELECTION_BOX_COLOR, LASSO_LINE_COLOR, RESIZE_HANDLE_WH } from "../utils/boardConstants";
@@ -47,6 +48,8 @@ export default function Board({ shared = false }) {
     const [selectedHighlighterMenu, setSelectedHighlighterMenu] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
     const [lastUpdate, setLastUpdate] = useState(0);
+
+    const [isManipulating, setIsManipulating] = useState(false);
 
     const [selectedIds, setSelectedIds] = useState([]);
     const [selectionLasso, setSelectionLasso] = useState(null);
@@ -126,48 +129,53 @@ export default function Board({ shared = false }) {
     useEffect(() => { shapeRef.current = shape }, [shape]);
 
     const { isDraggingSelectionRef, handleDragStart, handleDragMove, handleDragEnd } = useShapeDrag({
-        stageRef, linesRef, setLines, selectionBBoxRef, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsDraggingSelection
+        stageRef, linesRef, setLines, selectionBBoxRef, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsDraggingSelection, setIsManipulating
     });
 
     const { isRotatingRef, handleRotationStart, handleRotationDrag, handleRotationEnd } = useShapeRotate({
-        stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBoxRotation, selectedIdsRef, setEditHistory, socketRef
+        stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBoxRotation, selectedIdsRef, setEditHistory, socketRef, setIsManipulating
     });
 
     const { isResizingRef, handleResizeStart, handleResizeDrag, handleResizeEnd } = useShapeResize({
-        stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef
+        stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsManipulating 
     });
+
+    const handleDeleteSelection = useCallback(() => {
+        if (selectedIdsRef.current.length === 0) return;
+
+        const linesToErase = selectedIdsRef.current.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean);
+        if (linesToErase.length > 0) {
+            setEditHistory((prev) => {
+                const currentHistory = prev.history.slice(0, prev.editIndex + 1);
+                const currentErasedSignature = linesToErase.map(l => l.id).sort().join(',');
+                const isDuplicate = currentHistory.some(item => {
+                    if (item.op !== 'group_erase') return false;
+                    return item.lines.map(l => l.id).sort().join(',') === currentErasedSignature;
+                });
+                if (isDuplicate) return prev;
+
+                let newHistory;
+                if (prev.history.length < NUM_MAX_UNDO) newHistory = [...prev.history.slice(0, prev.editIndex + 1), {lines: linesToErase, op: "group_erase"}];
+                else newHistory = [...prev.history.slice(1, prev.editIndex + 1), {lines: linesToErase, op: "group_erase"}];
+
+                return { history: newHistory, editIndex: newHistory.length - 1 };
+            });
+            const erasedIds = linesToErase.map(l => l.id);
+            socketRef.current?.emit('board:draw:group_erase', erasedIds);
+        } 
+        setLines(prev => prev.filter(l => !selectedIdsRef.current.includes(l.id)));
+        clearSelection();
+    }, [clearSelection, socketRef, setLines, setEditHistory]);
 
     useEffect(() => {
         const onKeyDown = (e) => {
             if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
-                const linesToErase = selectedIds.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean);
-                if (linesToErase.length > 0) {
-                    setEditHistory((prev) => {
-                        const currentHistory = prev.history.slice(0, prev.editIndex + 1);
-                        const currentErasedSignature = linesToErase.map(l => l.id).sort().join(',');
-                        const isDuplicate = currentHistory.some(item => {
-                            if (item.op !== 'group_erase') return false;
-                            return item.lines.map(l => l.id).sort().join(',') === currentErasedSignature;
-                        });
-                        if (isDuplicate) return prev; 
-                        let newHistory;
-                        if (prev.history.length < NUM_MAX_UNDO) {
-                            newHistory = [...prev.history.slice(0, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
-                        } else {
-                            newHistory = [...prev.history.slice(1, prev.editIndex + 1), { lines: linesToErase, op: "group_erase" }];
-                        }
-                        return { history: newHistory, editIndex: newHistory.length - 1 };
-                    });
-                    const erasedIds = linesToErase.map(l => l.id);
-                    socketRef.current?.emit('board:draw:group_erase', erasedIds);
-                }
-                setLines(prev => prev.filter(l => !selectedIds.includes(l.id)));
-                clearSelection();
+                handleDeleteSelection();
             }
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [selectedIds, clearSelection, socketRef, setLines]);
+    }, [selectedIds, handleDeleteSelection]);
 
     const { touchCountRef } = useTouchHandlers({
         stageRef, setScale, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
@@ -493,11 +501,13 @@ export default function Board({ shared = false }) {
     const handlePointerUp = useCallback((e) => {
         if (isResizingRef.current) {
             handleResizeEnd();
+            setIsManipulating(false);
             return;
         }
 
         if (isRotatingRef.current) {
             handleRotationEnd();
+            setIsManipulating(false);
             return;
         }
 
@@ -851,6 +861,19 @@ export default function Board({ shared = false }) {
             navigate('/');
         }, WAIT_BEFORE_EXIT); 
     };
+    const selectionMenuVisible = selectedIds.length > 0 && selectionBBox && !isManipulating;
+    const selectionMenuPosition = (() => {
+        if (!selectionBBox) return { x: 0, y: 0 };
+        const stage = stageRef.current;
+        if (!stage) return { x: 0, y: 0 };
+        const s = stage.scaleX() || 1;
+        const cx = (selectionBBox.globalCenterX ?? (selectionBBox.x + selectionBBox.width / 2));
+        const topY = (selectionBBox.globalCenterY ?? (selectionBBox.y + selectionBBox.height / 2)) - selectionBBox.height / 2;
+        return {
+            x: cx * s + stage.x(),
+            y: topY * s + stage.y() - 50,
+        };
+    })();
 
     return (
         <div className="h-screen overflow-hidden relative bg-white" style={{ height: '100dvh' }} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}>
@@ -1064,6 +1087,7 @@ export default function Board({ shared = false }) {
                     />
 
                     {selectionBBox && (
+
                         <Group
                             x={selectionBBox.globalCenterX !== undefined ? selectionBBox.globalCenterX : selectionBBox.x + selectionBBox.width / 2}
                             y={selectionBBox.globalCenterY !== undefined ? selectionBBox.globalCenterY : selectionBBox.y + selectionBBox.height / 2}
@@ -1106,8 +1130,8 @@ export default function Board({ shared = false }) {
                                     fill={SELECTION_BOX_COLOR}
                                     stroke={SELECTION_BOX_COLOR}
                                     strokeWidth={1}
-                                    onPointerDown={(e) => handleResizeStart(e, handle.id)}
-                                    onTouchStart={(e) => handleResizeStart(e, handle.id)}
+                                    onPointerDown={(e) => {setIsManipulating(true); handleResizeStart(e, handle.id)}}
+                                    onTouchStart={(e) => {setIsManipulating(true); handleResizeStart(e, handle.id)}}
                                     onMouseEnter={(e) => handleSBoxResizeComponentMouseEnter(e, handle.id)}
                                     onMouseLeave={handleSBoxComponentMouseLeave}
                                     listening={true}
@@ -1139,6 +1163,7 @@ export default function Board({ shared = false }) {
                                     e.evt.preventDefault(); 
                                     const stage = stageRef.current;
                                     const pointerScale = stage.scaleX() || 1;
+                                    setIsManipulating(true);
                                     handleRotationStart(stage.getPointerPosition(), pointerScale);
                                 }}
 
@@ -1147,6 +1172,7 @@ export default function Board({ shared = false }) {
                                     e.evt.preventDefault(); 
                                     const stage = stageRef.current;
                                     const pointerScale = stage.scaleX() || 1;
+                                    setIsManipulating(true);
                                     handleRotationStart(stage.getPointerPosition(), pointerScale);
                                 }}
 
@@ -1370,6 +1396,12 @@ export default function Board({ shared = false }) {
                     onExportPdf={exportToPDF}
                 />
             )}
+            <SelectionContextMenu 
+                visible={selectionMenuVisible}
+                onCopy={handleCopy}
+                onDelete={handleDeleteSelection}
+                position={selectionMenuPosition}
+            />
         </div>
     );
 }

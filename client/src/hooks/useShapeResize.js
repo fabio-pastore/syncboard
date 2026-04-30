@@ -11,7 +11,8 @@ export default function useShapeResize({
     setSelectionBBox,
     selectedIdsRef,
     setEditHistory,
-    socketRef
+    socketRef,
+    setIsManipulating
 }) {
     const isResizingRef = useRef(false);
     const activeResizeHandleRef = useRef(null);
@@ -23,11 +24,12 @@ export default function useShapeResize({
         e.cancelBubble = true;
         e.evt.preventDefault();
         isResizingRef.current = true;
+        setIsManipulating(true);
         activeResizeHandleRef.current = current_handle;
         linesBeforeResizeRef.current = linesRef.current.map(l => ({...l, points: [...l.points]}));
         initialBBoxRef.current = {...selectionBBoxRef.current};
         initialBoxRotRef.current = selectionBBoxRotation || 0;
-    }, [selectionBBoxRotation, linesRef, selectionBBoxRef]);
+    }, [selectionBBoxRotation, linesRef, selectionBBoxRef, setIsManipulating]);
 
     const handleResizeDrag = useCallback((pointerPos, pointerScale) => {
         const stage = stageRef.current;
@@ -229,8 +231,9 @@ export default function useShapeResize({
         }
 
         isResizingRef.current = false;
+        setIsManipulating(false);
         activeResizeHandleRef.current = null;
-    }, [selectedIdsRef, linesRef, setEditHistory, socketRef]);
+    }, [selectedIdsRef, linesRef, setEditHistory, socketRef, setIsManipulating]);
 
     return { isResizingRef, handleResizeStart, handleResizeDrag, handleResizeEnd };
 }

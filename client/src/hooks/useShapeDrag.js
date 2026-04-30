@@ -11,7 +11,8 @@ export default function useShapeDrag({
     selectedIdsRef,
     setEditHistory,
     socketRef,
-    setIsDraggingSelection
+    setIsDraggingSelection,
+    setIsManipulating
 }) {
     const isDraggingSelectionRef = useRef(false);
     const dragStartRef = useRef(null);
@@ -19,10 +20,11 @@ export default function useShapeDrag({
 
     const handleDragStart = useCallback((pos) => {
         setIsDraggingSelection(true);
+        setIsManipulating(true);
         linesBeforeDragRef.current = linesRef.current?.map(line => ({ ...line, points: [...line.points] }));
         isDraggingSelectionRef.current = true;
         dragStartRef.current = { x: pos.x, y: pos.y };
-    }, [linesRef, setIsDraggingSelection]);
+    }, [linesRef, setIsDraggingSelection, setIsManipulating]);
 
     const handleDragMove = useCallback((pointerPos, pointerScale) => {
         const stage = stageRef.current;
@@ -62,6 +64,7 @@ export default function useShapeDrag({
 
     const handleDragEnd = useCallback(() => {
         setIsDraggingSelection(false);
+        setIsManipulating(false);
         isDraggingSelectionRef.current = false;
         dragStartRef.current = null;
 
@@ -86,7 +89,7 @@ export default function useShapeDrag({
             });  
             socketRef.current?.emit('board:draw:group_drag', draggedLinesPairs.map(pair => pair.new_line)); 
         }
-    }, [linesRef, selectedIdsRef, setEditHistory, socketRef, setIsDraggingSelection]);
+    }, [linesRef, selectedIdsRef, setEditHistory, socketRef, setIsDraggingSelection, setIsManipulating]);
 
     return { isDraggingSelectionRef, handleDragStart, handleDragMove, handleDragEnd };
 }

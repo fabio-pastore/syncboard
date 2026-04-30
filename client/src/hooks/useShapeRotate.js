@@ -11,7 +11,8 @@ export default function useShapeRotate({
     setSelectionBBoxRotation,
     selectedIdsRef,
     setEditHistory,
-    socketRef
+    socketRef,
+    setIsManipulating
 }) {
     const isRotatingRef = useRef(false);
     const dragStartAngleRef = useRef(0);
@@ -30,10 +31,11 @@ export default function useShapeRotate({
         const centerY = currSelectionBBox.globalCenterY !== undefined ? currSelectionBBox.globalCenterY : currSelectionBBox.y + currSelectionBBox.height / 2;
         
         isRotatingRef.current = true;
+        setIsManipulating(true);
         dragStartAngleRef.current = Math.atan2(virtualY - centerY, virtualX - centerX) * (180 / Math.PI);
         initialBoxRotRef.current = selectionBBoxRotation || 0;
         linesBeforeRotateRef.current = linesRef.current.map(l => ({...l, points: [...l.points]}));
-    }, [stageRef, selectionBBoxRef, selectionBBoxRotation, linesRef]);
+    }, [stageRef, selectionBBoxRef, selectionBBoxRotation, linesRef, setIsManipulating]);
 
     const handleRotationDrag = useCallback((pointerPos, pointerScale) => {
         const currBBox = selectionBBoxRef.current;
@@ -84,6 +86,7 @@ export default function useShapeRotate({
 
     const handleRotationEnd = useCallback(() => {
         isRotatingRef.current = false;
+        setIsManipulating(false);
         if (!selectionBBoxRef.current) return;
         const rotatedLinesPairs = selectedIdsRef.current.map(id => {
             const newLineData = linesRef.current?.find(l => l.id === id);
@@ -104,7 +107,7 @@ export default function useShapeRotate({
             });
             socketRef.current?.emit('board:draw:group_rotate', rotatedLinesPairs.map(p => p.new_line));
         }
-    }, [selectionBBoxRef, selectedIdsRef, linesRef, setEditHistory, socketRef]);
+    }, [selectionBBoxRef, selectedIdsRef, linesRef, setEditHistory, socketRef, setIsManipulating]);
 
     return { isRotatingRef, handleRotationStart, handleRotationDrag, handleRotationEnd };
 }
