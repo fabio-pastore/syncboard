@@ -9,11 +9,18 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
     const [lines, setLines] = useState([]);
     const [peers, setPeers] = useState(0);
     const [peerEntries, setPeerEntries] = useState([]);
+    const [chatOpen, setChatOpen] = useState(false);
     const [role, setRole] = useState('editor');
     const [chatMessages, setChatMessages] = useState([]);
+    const [unreadMessages, setUnreadMessages] = useState(0);
     const [error, setError] = useState("");
+    const chatOpenRef = useRef(false);
     const socketRef = useRef(null);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        chatOpenRef.current = chatOpen;
+    }, [chatOpen]);
 
     useEffect(() => {
         async function init() {
@@ -233,6 +240,7 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
             sock.on('chat:send', (message_data) => {
                 if (!message_data) return;
                 const { id, username, time, body } = message_data;
+                if (!chatOpenRef.current) setUnreadMessages((prev) => prev + 1)
                 setChatMessages((prev) => [...prev, {type: "other", id: id, username: username, time: time, body: body}]);
             });
 
@@ -251,5 +259,9 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
         return () => { socketRef.current?.disconnect(); };
     }, [id, token, shared]);
 
-    return { board, setBoard, lines, setLines, peers, peerEntries, role, setRole, error, setError, socketRef, chatMessages, setChatMessages };
+    return { 
+        board, setBoard, lines, setLines, peers, peerEntries, role, setRole, 
+        error, setError, socketRef, chatMessages, setChatMessages, chatOpen, setChatOpen,
+        chatOpenRef, unreadMessages, setUnreadMessages 
+    };
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Stage, Layer, Line, Circle, Rect, Text, Group } from "react-konva";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, MessageCircle, Users, Share2, X, Send, Copy, Trash2} from "lucide-react";
+import { ArrowLeft, MessageCircle, Users, Share2, X, Send, Copy, Trash2, Search } from "lucide-react";
 import { useAuth } from '../context/AuthContext';
 import useSocket from "../hooks/useSocket";
 import useExport from "../hooks/useExport";
@@ -18,7 +18,8 @@ import SelectionContextMenu from "../components/board/SelectionContextMenu";
 import StageContextMenu from "../components/board/StageContextMenu";
 
 import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
-         HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, SELECTION_BOX_COLOR, LASSO_LINE_COLOR, RESIZE_HANDLE_WH } from "../utils/boardConstants";
+         HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, SELECTION_BOX_COLOR, LASSO_LINE_COLOR, RESIZE_HANDLE_WH, 
+         ZOOM_DISPLAY_TIME} from "../utils/boardConstants";
 
 import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, 
          lineIntersectsOrInsidePolygon, computeSelectionBBox, getDynamicCursor, translatePoints } from "../utils/boardUtils";
@@ -52,6 +53,7 @@ export default function Board({ shared = false }) {
 
     const [isManipulating, setIsManipulating] = useState(false);
     const [isOpenContextMenu, setIsOpenContextMenu] = useState(false);
+    const [hasZoomed, setHasZoomed] = useState(false);
 
     const [selectedIds, setSelectedIds] = useState([]);
     const [selectionLasso, setSelectionLasso] = useState(null);
@@ -92,7 +94,6 @@ export default function Board({ shared = false }) {
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
     useEffect(() => {selectionBBoxRef.current = selectionBBox}, [selectionBBox]);
 
-    const [chatOpen, setChatOpen] = useState(false);
     const [inputMessage, setInputMessage] = useState("");
     const inputMessageRef = useRef(null);
     const messagesEndRef = useRef(null);
@@ -124,10 +125,19 @@ export default function Board({ shared = false }) {
         });
     };
 
+    const displayZoomMeter = () => {
+        setHasZoomed(true);
+        setTimeout(() => {
+            setHasZoomed(false);
+        }, ZOOM_DISPLAY_TIME); 
+    }
+
     const reorderLines = useCallback((lines) => sortLinesByTime(lines), []);
 
     const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, 
-            role, error, setError, socketRef, chatMessages, setChatMessages } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
+            role, error, setError, socketRef, chatOpenRef, chatOpen, setChatOpen, chatMessages, 
+            setChatMessages, unreadMessages, setUnreadMessages 
+        } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
@@ -631,6 +641,7 @@ export default function Board({ shared = false }) {
             const clampedScale = Math.max(0.1, Math.min(newScale, 10));
             stage.scale({ x: clampedScale, y: clampedScale });
             setScale(clampedScale);
+            displayZoomMeter();
             const newPos = {
                 x: pointer.x - mousePointTo.x * clampedScale,
                 y: pointer.y - mousePointTo.y * clampedScale,
@@ -1340,18 +1351,39 @@ export default function Board({ shared = false }) {
                     )}
             </div>
 
-            <div className="fixed bottom-7.5 right-4 flex items-center gap-2 pointer-events-auto z-10">
+            <div 
+                className={`
+                    fixed bottom-2 left-2 flex items-center gap-2 pointer-events-none z-10 transition-opacity duration-300 ease-in-out
+                    py-1.5 px-2 rounded-xl bg-white border border-gray-200 text-gray-800 shadow-sm text-sm
+                    ${hasZoomed ? 'opacity-100 ' : 'opacity-0'} 
+                    
+                `}
+            >
+                
+                <Search size={14} />
+                <div className="w-px h-6 bg-gray-300"></div>
+                {Math.round(100 * scale) + "%"}
+                
+            </div>
+
+            <div className="fixed bottom-2 right-2 flex items-center gap-2 pointer-events-auto z-10"> {/* bottom used to be 7.5 */}
                 <button
-                    onClick={() => {setChatOpen((prev) => !prev); setIsOpenContextMenu(false);}} 
-                    className="py-2 px-4 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900"
+                    onClick={() => {setChatOpen((prev) => !prev); setIsOpenContextMenu(false); setUnreadMessages(0);}} 
+                    className="py-2 px-3 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900"
                 >
                     <MessageCircle size={18} />
+
+                    {!chatOpen && unreadMessages > 0 && (
+                        <div className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full border-2 border-white shadow-sm">
+                            {unreadMessages > 99 ? '99+' : unreadMessages}
+                        </div>
+                    )}
                 </button>
             </div>
 
             <div 
                 className={`
-                    fixed bottom-6 right-2 z-20 flex flex-col w-80 md:w-96 h-[92vh]
+                    fixed bottom-2 right-2 z-20 flex flex-col w-80 md:w-96 h-[93vh]
                     bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden font-sans
                     transition-all duration-300 ease-in-out origin-bottom-right 
                     ${chatOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}                                                                                                               
