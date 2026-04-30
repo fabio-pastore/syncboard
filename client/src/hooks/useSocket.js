@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import { apiFetch } from "../api";
-import { SOCKET_URL } from "../utils/boardConstants";
+import { SOCKET_URL, CURSOR_COLORS, CURSOR_IDLE_REMOVE } from "../utils/boardConstants";
 
 export default function useSocket({ id, token, shared, onShapeUpdate, reorderLines }) {
     const [board, setBoard] = useState(null);
@@ -14,9 +14,21 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
     const [chatMessages, setChatMessages] = useState([]);
     const [unreadMessages, setUnreadMessages] = useState(0);
     const [error, setError] = useState("");
+    const [cursors, setCursors] = useState({});
     const chatOpenRef = useRef(false);
     const socketRef = useRef(null);
     const navigate = useNavigate();
+    const mySocketIdRef = useRef(null);
+
+    // different color for each user so it's unique thanks stack overflow
+    const getCursorColor = useCallback((socketId) => {
+        let hash = 0;
+        for (let i = 0; i < socketId.length; i++) {
+            hash = ((hash << 5) - hash) + socketId.charCodeAt(i);
+            hash |= 0;
+        }
+        return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];
+    }, []);
 
     useEffect(() => {
         chatOpenRef.current = chatOpen;
@@ -56,6 +68,7 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
             socketRef.current = sock;
 
             sock.on('connect', () => {
+                mySocketIdRef.current = sock.id;
                 sock.emit('board:join', { boardId: shared ? token : id });
             });
 
@@ -237,6 +250,22 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));
             });
 
+            sock.on('board:cursor:update', ({ socketId, username, x, y }) => {
+                if (socketId === mySocketIdRef.current) return;
+                setCursors((prev) => ({
+                    ...prev,
+                    [socketId]: { username, x, y, lastSeen: Date.now(), color: getCursorColor(socketId) },
+                }));
+            });
+
+            sock.on('board:cursor:leave', ({ socketId }) => {
+                setCursors((prev) => {
+                    const next = { ...prev };
+                    delete next[socketId];
+                    return next;
+                });
+            });
+
             sock.on('chat:send', (message_data) => {
                 if (!message_data) return;
                 const { id, username, time, body } = message_data;
@@ -256,12 +285,31 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
         }
 
         init();
-        return () => { socketRef.current?.disconnect(); };
-    }, [id, token, shared]);
+
+        // clean up the cursors every few seconds
+        const cursorCleanup = setInterval(() => {
+            const now = Date.now();
+            setCursors((prev) => {
+                const next = {};
+                for (const [sid, cursor] of Object.entries(prev)) {
+                    if (now - cursor.lastSeen < CURSOR_IDLE_REMOVE) {
+                        next[sid] = cursor;
+                    }
+                }
+                if (Object.keys(next).length === Object.keys(prev).length) return prev;
+                return next;
+            });
+        }, 5000);
+
+        return () => { 
+            clearInterval(cursorCleanup);
+            socketRef.current?.disconnect(); 
+        };
+    }, [id, token, shared, getCursorColor]);
 
     return { 
         board, setBoard, lines, setLines, peers, peerEntries, role, setRole, 
         error, setError, socketRef, chatMessages, setChatMessages, chatOpen, setChatOpen,
-        chatOpenRef, unreadMessages, setUnreadMessages 
+        chatOpenRef, unreadMessages, setUnreadMessages, cursors
     };
 }

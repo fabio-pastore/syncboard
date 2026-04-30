@@ -261,9 +261,25 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('chat:send', {id: id, username: username, time: time, body: body});
     });
 
-    socket.on('disconnect', async () => {
+    socket.on('board:cursor:move', ({ x, y }) => {
         const roomId = socket.data.boardId;
         if (!roomId) return;
+        socket.to(roomId).emit('board:cursor:update', {
+            socketId: socket.id,
+            username: socket.data.username,
+            x,
+            y,
+        });
+    });
+
+    socket.on('disconnect', async () => {
+        const roomId = socket.data.boardId;
+        if (!roomId) {
+            return;
+        }
+
+        // tell others to remove this cursor
+        socket.to(roomId).emit('board:cursor:leave', { socketId: socket.id });
 
         if (socket.data.isOwner) {
             // if i quit everyone has to be kicked out

@@ -18,3 +18,8 @@ export const PRESET_COLORS = ['#000000', '#ef4444', '#f97316', '#eab308', '#22c5
 export const LASSO_LINE_COLOR = "#959494"
 export const SELECTION_BOX_COLOR = "#3b82f6"
 export const RESIZE_HANDLE_WH = 12;
+
+export const CURSOR_COLORS = ['#8b5cf6', '#ef4444', '#f97316', '#22c55e', '#3b82f6', '#ec4899', '#14b8a6', '#f59e0b'];
+export const CURSOR_EMIT_INTERVAL = 16;     // time in ms
+export const CURSOR_IDLE_FADE = 5000;
+export const CURSOR_IDLE_REMOVE = 15000;

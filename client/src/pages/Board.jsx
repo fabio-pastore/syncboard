@@ -16,10 +16,11 @@ import ReceivedMessage from "../components/board/ReceivedMessage"
 import UserEntry from "../components/board/UserEntry";
 import SelectionContextMenu from "../components/board/SelectionContextMenu";
 import StageContextMenu from "../components/board/StageContextMenu";
+import CursorOverlay from "../components/board/CursorOverlay";
 
 import { UPDATE_INTERVAL, NUM_MAX_UNDO, MIN_POINT_DISTANCE, MIN_POINT_DISTANCE_PEN, WAIT_BEFORE_EXIT, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
          HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, SELECTION_BOX_COLOR, LASSO_LINE_COLOR, RESIZE_HANDLE_WH, 
-         ZOOM_DISPLAY_TIME} from "../utils/boardConstants";
+         ZOOM_DISPLAY_TIME, CURSOR_EMIT_INTERVAL} from "../utils/boardConstants";
 
 import { hexToRgba, smoothPoints, computeTrianglePoints, computeRectanglePoints, computeCircleData, 
          lineIntersectsOrInsidePolygon, computeSelectionBBox, getDynamicCursor, translatePoints } from "../utils/boardUtils";
@@ -89,6 +90,7 @@ export default function Board({ shared = false }) {
 
     const rightClickPosRef = useRef({x: 0, y: 0});
     const rightClickScreenPosRef = useRef({x: 0,y: 0});
+    const lastCursorEmitRef = useRef(0);
 
     useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
@@ -136,7 +138,7 @@ export default function Board({ shared = false }) {
 
     const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, 
             role, error, setError, socketRef, chatOpenRef, chatOpen, setChatOpen, chatMessages, 
-            setChatMessages, unreadMessages, setUnreadMessages 
+            setChatMessages, unreadMessages, setUnreadMessages, cursors
         } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
@@ -411,6 +413,14 @@ export default function Board({ shared = false }) {
         if (eraserCursorRef.current) {
             eraserCursorRef.current.style.left = `${e.evt.clientX}px`;
             eraserCursorRef.current.style.top = `${e.evt.clientY}px`;
+        }
+
+        // send cursor position every few ms
+        const cursorNow = Date.now();
+        if (cursorNow - lastCursorEmitRef.current > CURSOR_EMIT_INTERVAL) {
+            const cursorPos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
+            socketRef.current?.emit('board:cursor:move', cursorPos);
+            lastCursorEmitRef.current = cursorNow;
         }
 
         if (!isDrawingRef.current) return;
@@ -1272,6 +1282,10 @@ export default function Board({ shared = false }) {
                         </Group>
                     )}
 
+                </Layer>
+
+                <Layer name="cursors-layer" listening={false}>
+                    <CursorOverlay cursors={cursors} />
                 </Layer>
             </Stage>
 
