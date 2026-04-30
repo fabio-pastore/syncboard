@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
+import Home from './pages/Home';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
@@ -13,13 +14,14 @@ export default function App() {
 
   return (
     <Routes>
+      <Route path='/' element={user ? <Navigate to="/dashboard" replace /> : <Home />} />
       <Route path='/login' element={user ? <Navigate to="/dashboard" replace /> : <Login />} />
       <Route path='/signup' element={user ? <Navigate to="/dashboard" replace /> : <Signup />} />
-      <Route path='/' element={<ProtectedRoute><Dashboard /></ProtectedRoute>} /> {/* this way the dashboard page is protected, and we need to be logged in to see it */}
+      <Route path='/dashboard' element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/board/:id" element={<ProtectedRoute><Board /></ProtectedRoute>} />
       <Route path="/board/share/:token" element={<ProtectedRoute><Board shared /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-      <Route path='*' element={<Navigate to={user ? "/" : "/login"} replace />} /> {/* if the user tries to go to a page that doesn't exist, we redirect them to the dashboard if they're logged in, and to the login page if they're not */}
+      <Route path='*' element={<Navigate to={user ? "/dashboard" : "/login"} replace />} />
     </Routes>
   )
 }

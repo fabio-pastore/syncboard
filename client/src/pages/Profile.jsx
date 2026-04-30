@@ -50,7 +50,7 @@ export default function Profile() {
                     <span className="text-gray-900">Board</span>
                 </h1>
                 <button
-                    onClick={() => navigate('/')}
+                    onClick={() => navigate('/dashboard')}
                     className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition cursor-pointer"
                 >
                     &larr; Back to Dashboard

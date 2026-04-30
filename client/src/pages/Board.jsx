@@ -897,8 +897,8 @@ export default function Board({ shared = false }) {
         clearSelection();
         setTimeout(() => {
             saveThumbnail();
-            navigate('/');
-        }, WAIT_BEFORE_EXIT); 
+            navigate('/dashboard');
+        }, WAIT_BEFORE_EXIT);
     };
 
     const selectionMenuVisible = selectedIds.length > 0 && selectionBBox && !isManipulating;
