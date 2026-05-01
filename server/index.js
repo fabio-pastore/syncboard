@@ -102,13 +102,14 @@ io.on('connection', (socket) => {
             socket.data.userId = userId;
             socket.data.isShareToken = !!shareToken;
             socket.data.isOwner = !shareToken && !!userId && board.owner.toString() === userId;
-            const joinedUser = await User.findById(userId).select('username');
+            const joinedUser = await User.findById(userId).select('username profileImage');
             if (!joinedUser) return socket.emit('error', 'User not found');
             socket.data.username = joinedUser.username;
+            socket.data.profilePicture = joinedUser.profileImage;
 
             const peerCount = io.sockets.adapter.rooms.get(roomId)?.size || 1;
             const sockets = await io.in(roomId).fetchSockets();
-            const connectedPeers = sockets.map((sock) => sock.data.username);
+            const connectedPeers = sockets.map((sock) => {return {username: sock.data.username, pfp: sock.data.profilePicture}});
 
             socket.emit('board:load', { lines: board.content, count: peerCount, connectedPeers: connectedPeers, role: role });
             io.to(roomId).emit('board:peers', {count: peerCount, connectedPeers: connectedPeers});

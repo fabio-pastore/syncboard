@@ -157,17 +157,17 @@ export default function Board({ shared = false }) {
         stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsManipulating 
     });
 
-    const handleModifySelection = useCallback((newColor, newStrokeWidth, newOpacity) => {
+    const handleModifySelection = useCallback((newBrushColor, newFillColor, newStrokeWidth, newOpacity) => {
         if (selectedIdsRef.current.length === 0) return;
 
         const linePairs = selectedIdsRef.current?.map(id => {
             const oldLine = linesRef.current?.find(line => line.id === id);
             const modifiedLine = {
                 ...oldLine, 
-                color: newColor, 
+                color: newBrushColor, 
                 strokeWidth: newStrokeWidth, 
                 opacity: newOpacity, fill: 
-                oldLine.fill ? newColor : undefined
+                oldLine.fill ? newFillColor : undefined
             };
             if (!oldLine || !modifiedLine) return null;
             return {prev_line: oldLine, new_line: modifiedLine}; 
@@ -1387,10 +1387,13 @@ export default function Board({ shared = false }) {
                         
                             {peerEntries.map((peer) => (
                                 <div 
-                                    key={peer + `${Date.now()}_${Math.random().toString(36).slice(2)}`} 
+                                    key={peer.username + `${Date.now()}_${Math.random().toString(36).slice(2)}`} 
                                     className="px-0 py-0.5 rounded-lg hover:bg-gray-50 transition-colors"
                                 >
-                                    <UserEntry username={(peer === user.username) ? peer + " (You)" : peer} />
+                                    <UserEntry 
+                                        username={(peer.username === user.username) ? peer.username + " (You)" : peer.username}
+                                        profilePicture={peer.pfp} 
+                                    />
                                 </div>
                             ))}
 

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Copy, Trash2, ListPlus, Check, Eye } from 'lucide-react';
 
 export default function SelectionContextMenu({ visible, position, onCopy, onDelete, onModify }) {
-    const [modifiedColor, setModifiedColor] = useState("#000000");
+    const [modifiedBrushColor, setModifiedBrushColor] = useState("#000000");
+    const [modifiedFillColor, setModifiedFillColor] = useState("#000000");
     const [modifiedStrokeWidth, setModifiedStrokeWidth] = useState(3);
     const [modifiedOpacity, setModifiedOpacity] = useState(1);
     const [activeMenu, setActiveMenu] = useState(null); // 'width' if width menu is open or 'opacity' for opacity menu, else null
@@ -47,14 +48,24 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
 
             <div className='w-px h-5 bg-gray-200'></div>
 
-            <label className="m-2 relative w-4 h-4 cursor-pointer items-center flex transition hover:scale-110" title="Color">
+            <label className="m-2 relative w-4 h-4 cursor-pointer items-center flex transition hover:scale-110" title="Brush color">
                     <div className="w-4 h-4 rounded-full border-2"
                         style={{
-                            background: modifiedColor,
-                            borderColor: `color-mix(in srgb, ${modifiedColor}, black 30%)`
+                            background: modifiedBrushColor,
+                            borderColor: `color-mix(in srgb, ${modifiedBrushColor}, black 30%)`
                         }}
                     />
-                    <input type="color" value={modifiedColor} onChange={(e) => setModifiedColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+                    <input type="color" value={modifiedBrushColor} onChange={(e) => setModifiedBrushColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+            </label>
+
+            <label className="m-2 relative w-4 h-4 cursor-pointer items-center flex transition hover:scale-110" title="Fill color">
+                    <div className="w-4 h-4 rounded-full border-2"
+                        style={{
+                            background: modifiedFillColor,
+                            borderColor: `color-mix(in srgb, ${modifiedFillColor}, black 30%)`
+                        }}
+                    />
+                    <input type="color" value={modifiedFillColor} onChange={(e) => setModifiedFillColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
             </label>
 
             <div className="relative flex items-center">
@@ -117,7 +128,7 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
 
             <button
                 onClick={() => {
-                    onModify(modifiedColor, modifiedStrokeWidth, modifiedOpacity);
+                    onModify(modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity);
                     setActiveMenu(null); 
                 }}
                 title="Apply"
