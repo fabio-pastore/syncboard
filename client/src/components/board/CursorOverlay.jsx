@@ -2,7 +2,7 @@ import { Group, Line, Text, Rect } from "react-konva";
 import Konva from "konva";
 import { CURSOR_IDLE_FADE } from "../../utils/boardConstants";
 
-// yes i'm drawing a cursor specifing the coordinates
+// yes i'm drawing a cursor by specifying the coordinates
 const POINTER_PATH = [
     0, 0,     // where it starts
     0, 14,    // down the left edge

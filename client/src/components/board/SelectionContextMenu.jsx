@@ -1,10 +1,19 @@
-import { useState } from 'react';
-import {Copy, Trash2, ListPlus, Check, Eye } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Copy, Trash2, ListPlus, Check, Eye } from 'lucide-react';
 
 export default function SelectionContextMenu({ visible, position, onCopy, onDelete, onModify }) {
     const [modifiedColor, setModifiedColor] = useState("#000000");
     const [modifiedStrokeWidth, setModifiedStrokeWidth] = useState(3);
     const [modifiedOpacity, setModifiedOpacity] = useState(1);
+    const [activeMenu, setActiveMenu] = useState(null); // 'width' if width menu is open or 'opacity' for opacity menu, else null
+
+    // hide sub-menus if main menu is closed
+    useEffect(() => {
+    if (!visible) {
+        setActiveMenu(null);
+    }
+}, [visible]);
+
     return (
         <div 
             className='fixed z-10 items-center gap-1 px-2 py-1.5
@@ -27,7 +36,6 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
                 <Copy size={16} />
             </button>
 
-            <div className='w-px h-5 bg-gray-200'></div>
 
             <button
                 onClick={onDelete}
@@ -39,8 +47,8 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
 
             <div className='w-px h-5 bg-gray-200'></div>
 
-            <label className="m-2 relative w-4 h-4 cursor-pointer items-center flex" title="Modify color">
-                    <div className="w-4 h-4 rounded-full border-2 transition"
+            <label className="m-2 relative w-4 h-4 cursor-pointer items-center flex transition hover:scale-110" title="Color">
+                    <div className="w-4 h-4 rounded-full border-2"
                         style={{
                             background: modifiedColor,
                             borderColor: `color-mix(in srgb, ${modifiedColor}, black 30%)`
@@ -49,26 +57,74 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
                     <input type="color" value={modifiedColor} onChange={(e) => setModifiedColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
             </label>
 
+            <div className="relative flex items-center">
+                <button
+                    onClick={() => setActiveMenu(prev => prev === 'width' ? null : 'width')}
+                    title="Stroke width"
+                    className={`p-2 rounded-xl transition cursor-pointer hover:text-gray-900 ${activeMenu === 'width' ? 'bg-gray-100 text-gray-900' : 'hover:bg-gray-100 text-gray-600'}`}
+                >
+                    <ListPlus size={16} />
+                </button>
+                
+                {activeMenu === 'width' && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 p-2 bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col w-32">
+                        <span className="text-[9px] text-gray-400 font-normal pb-0.5 text-left w-full">Stroke width</span>
+                        <div className="flex items-center gap-2 w-full">
+                            <input 
+                                type="range" 
+                                min="1" 
+                                max="50" 
+                                step="1"
+                                value={modifiedStrokeWidth} 
+                                onChange={(e) => setModifiedStrokeWidth(Number(e.target.value))} 
+                                className="flex-1 accent-gray-600 cursor-pointer min-w-0" 
+                            />
+                            <span className="text-xs text-gray-500 w-5 text-right relative bottom-0.5 right-1.5">{modifiedStrokeWidth}</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="relative flex items-center">
+                <button
+                    onClick={() => setActiveMenu(prev => prev === 'opacity' ? null : 'opacity')}
+                    title="Opacity"
+                    className={`p-2 rounded-xl transition cursor-pointer hover:text-gray-900 ${activeMenu === 'opacity' ? 'bg-gray-100 text-gray-900' : 'hover:bg-gray-100 text-gray-600'}`}
+                >
+                    <Eye size={16} />
+                </button>
+
+                {activeMenu === 'opacity' && (
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 p-2 bg-white border border-gray-200 rounded-xl shadow-xl flex flex-col w-32">
+                        <span className="text-[9px] text-gray-400 font-normal pb-0.5 text-left w-full">Opacity</span>
+                        <div className="flex items-center gap-2 w-full">
+                            <input 
+                                type="range" 
+                                min="0.1" 
+                                max="1" 
+                                step="0.1"
+                                value={modifiedOpacity} 
+                                onChange={(e) => setModifiedOpacity(Number(e.target.value))} 
+                                className="flex-1 accent-gray-600 cursor-pointer min-w-0" 
+                            />
+                            <span className="text-xs text-gray-500 w-8 text-right relative bottom-0.5 right-2">{Math.round(modifiedOpacity * 100)}%</span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
             <div className='w-px h-5 bg-gray-200'></div>
 
             <button
-                onClick={() => {}}
-                title="Copy"
-                className='p-2 rounded-xl transition cursor-pointer hover:bg-gray-100 text-gray-600 hover:text-gray-900'
-            >
-                <ListPlus size={16} />
-            </button>
-
-            <div className='w-px h-5 bg-gray-200'></div>
-
-            <button
-                onClick={() => onModify(modifiedColor, modifiedStrokeWidth, modifiedOpacity)}
+                onClick={() => {
+                    onModify(modifiedColor, modifiedStrokeWidth, modifiedOpacity);
+                    setActiveMenu(null); 
+                }}
                 title="Apply"
-                className='p-2 rounded-xl transition cursor-pointer hover:bg-gray-100 text-green-500'
+                className='p-2 rounded-xl transition cursor-pointer hover:bg-green-50 text-green-500 hover:text-green-600'
             >
                 <Check size={16} />
             </button>
-
 
         </div>
     );

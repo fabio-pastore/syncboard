@@ -62,7 +62,7 @@ export default function Toolbar({
                         step="0.05"
                         value={highlighterOpacity}
                         onChange={(e) => setHighlighterOpacity(parseFloat(e.target.value))}
-                        className="w-16 h-1 accent-gray-900 cursor-pointer"
+                        className="w-16 h-1 accent-gray-600 cursor-pointer"
                     />
                 </div>
             </div>
@@ -151,7 +151,7 @@ export default function Toolbar({
                         type="range" min="0" max="1" step="0.05"
                         value={shapeBorderOpacity}
                         onChange={(e) => setShapeBorderOpacity(parseFloat(e.target.value))}
-                        className="w-16 h-1 accent-gray-900 cursor-pointer"
+                        className="w-16 h-1 accent-gray-600 cursor-pointer"
                     />
                 </div>
 
@@ -161,7 +161,7 @@ export default function Toolbar({
                         type="range" min="0" max="1" step="0.05"
                         value={shapeFillOpacity}
                         onChange={(e) => setShapeFillOpacity(parseFloat(e.target.value))}
-                        className="w-16 h-1 accent-gray-900 cursor-pointer"
+                        className="w-16 h-1 accent-gray-600 cursor-pointer"
                     />
                 </div>
 

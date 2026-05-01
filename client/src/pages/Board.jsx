@@ -162,7 +162,13 @@ export default function Board({ shared = false }) {
 
         const linePairs = selectedIdsRef.current?.map(id => {
             const oldLine = linesRef.current?.find(line => line.id === id);
-            const modifiedLine = {...oldLine, color: newColor, strokeWidth: newStrokeWidth, opacity: newOpacity};
+            const modifiedLine = {
+                ...oldLine, 
+                color: newColor, 
+                strokeWidth: newStrokeWidth, 
+                opacity: newOpacity, fill: 
+                oldLine.fill ? newColor : undefined
+            };
             if (!oldLine || !modifiedLine) return null;
             return {prev_line: oldLine, new_line: modifiedLine}; 
         }).filter(Boolean); // remove null values
@@ -422,6 +428,14 @@ export default function Board({ shared = false }) {
         const pointerPos = stage.getPointerPosition();
         const pointerScale = stage.scaleX() || 1;
 
+        // send cursor position every few ms
+        const cursorNow = Date.now();
+        if (cursorNow - lastCursorEmitRef.current > CURSOR_EMIT_INTERVAL) {
+            const cursorPos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
+            socketRef.current?.emit('board:cursor:move', cursorPos);
+            lastCursorEmitRef.current = cursorNow;
+        }
+
         if (isResizingRef.current) {
             handleResizeDrag(pointerPos, pointerScale);
             return;
@@ -449,14 +463,6 @@ export default function Board({ shared = false }) {
         if (eraserCursorRef.current) {
             eraserCursorRef.current.style.left = `${e.evt.clientX}px`;
             eraserCursorRef.current.style.top = `${e.evt.clientY}px`;
-        }
-
-        // send cursor position every few ms
-        const cursorNow = Date.now();
-        if (cursorNow - lastCursorEmitRef.current > CURSOR_EMIT_INTERVAL) {
-            const cursorPos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
-            socketRef.current?.emit('board:cursor:move', cursorPos);
-            lastCursorEmitRef.current = cursorNow;
         }
 
         if (!isDrawingRef.current) return;
