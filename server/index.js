@@ -179,7 +179,7 @@ async function flushWriteBuffer(roomId) {
         try {
             await BoardLine.bulkWrite(bulkOps, { ordered: false });
         } catch (err) {
-            console.error('[WriteBuffer] flush error for room', roomId, err.message);
+            console.error('Flush error for room', roomId, err.message);
         }
     }
 }
@@ -265,6 +265,9 @@ io.on('connection', (socket) => {
                 return socket.emit('error', 'Unauthorized');
             }
 
+            const bgType = board.bgType;
+            const bgColor = board.bgColor;
+
             const roomId = board._id.toString();
             socket.join(roomId);
             socket.data.boardId = roomId;
@@ -315,7 +318,7 @@ io.on('connection', (socket) => {
                 pfp: p.profilePicture,
             }));
 
-            socket.emit('board:load', { lines, count: peerCount, connectedPeers, role });
+            socket.emit('board:load', { lines, count: peerCount, connectedPeers, role, bgType: bgType, bgColor: bgColor });
             io.to(roomId).emit('board:peers', { count: peerCount, connectedPeers });
         } catch (err) {
             console.error('board:join error:', err);
@@ -336,6 +339,30 @@ io.on('connection', (socket) => {
             username: socket.data.username,
             viewport: viewport || null,
         });
+    });
+
+    socket.on('board:bg:modify', async ({ newType, newColor }) => { 
+        if (!newType && !newColor) return;
+        const roomId = socket.data.boardId;
+        if (!roomId || socket.data.role !== 'editor') return;
+        socket.to(roomId).emit('board:bg:modify', { newType, newColor });
+        
+        const updateData = {};
+        if (newType !== null && newType !== undefined) {
+            updateData.bgType = newType;
+        }
+        if (newColor !== null && newColor !== undefined) {
+            updateData.bgColor = newColor;
+        }
+
+        try {
+            await Board.findByIdAndUpdate(
+                roomId, 
+                { $set: updateData }
+            );
+        } catch (err) {
+            console.error("Failed to save background information", error);
+        }
     });
 
     socket.on('board:draw:line', (line) => {

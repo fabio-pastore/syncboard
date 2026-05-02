@@ -9,6 +9,8 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
     const [board, setBoard] = useState(null);
     const [lines, setLines] = useState([]);
     const [peers, setPeers] = useState(0);
+    const [bgPattern, setBgPattern] = useState('none');
+    const [bgColor, setBgColor] = useState('#ffffff');
     const [peerEntries, setPeerEntries] = useState([]);
     const [chatOpen, setChatOpen] = useState(false);
     const [role, setRole] = useState('editor');
@@ -73,10 +75,12 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 sock.emit('board:join', { boardId: shared ? token : id });
             });
 
-            sock.on('board:load', ({ lines: l, count: c, connectedPeers: peers, role: r }) => {
-                setLines(l);
+            sock.on('board:load', ({ lines: l, count: c, connectedPeers: peers, role: r, bgType: bgT, bgColor: bgCol }) => {
+                setLines(l); 
                 setPeers(c);
                 setPeerEntries(peers);
+                if (bgT) setBgPattern(bgT);
+                if (bgCol) setBgColor(bgCol);
                 if (r) setRole(r);
             });
 
@@ -292,22 +296,29 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
 
             // binary cursor + batching
             sock.on('board:cursor:batch', (buffer) => {
-                const updates = decodeCursorBatch(buffer);
-                setCursors((prev) => {
-                    const next = { ...prev };
-                    for (const { socketId, username, x, y } of updates) {
-                        if (socketId === mySocketIdRef.current) continue;
+            const updates = decodeCursorBatch(buffer);
+            if (!updates || updates.length === 0) return;
+            setCursors((prev) => {
+                let hasChanges = false;
+                const next = { ...prev };
+                for (const { socketId, username, x, y } of updates) {
+                    if (socketId === mySocketIdRef.current) continue;
+                    const existing = prev[socketId];
+                    // we update the cursor only if it has moved, avoiding unnecessary re-renders which would spike CPU usage
+                    if (!existing || existing.x !== x || existing.y !== y) {
                         next[socketId] = {
                             username,
                             x,
                             y,
                             lastSeen: Date.now(),
-                            color: prev[socketId]?.color || getCursorColor(socketId),
+                            color: existing?.color || getCursorColor(socketId),
                         };
+                        hasChanges = true;
                     }
-                    return next;
-                });
+                }
+                return hasChanges ? next : prev;
             });
+        });
 
             sock.on('board:cursor:leave', ({ socketId }) => {
                 setCursors((prev) => {
@@ -315,6 +326,13 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                     delete next[socketId];
                     return next;
                 });
+            });
+
+            sock.on('board:bg:modify', (newBgInfo) => {
+                if (!newBgInfo) return;
+                const { newType, newColor } = newBgInfo;
+                if (newType) setBgPattern(newType);
+                if (newColor) setBgColor(newColor);
             });
 
             sock.on('chat:send', (message_data) => {
@@ -361,6 +379,7 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
     return { 
         board, setBoard, lines, setLines, peers, peerEntries, role, setRole, 
         error, setError, socketRef, chatMessages, setChatMessages, chatOpen, setChatOpen,
-        chatOpenRef, unreadMessages, setUnreadMessages, cursors
+        chatOpenRef, unreadMessages, setUnreadMessages, cursors, bgColor, setBgColor, bgPattern,
+        setBgPattern
     };
 }

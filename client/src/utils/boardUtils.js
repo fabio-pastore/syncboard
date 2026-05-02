@@ -8,6 +8,27 @@ export const hexToRgba = (hex, opacity) => {
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 };
 
+export const RgbaToHex = (colorStr) => {
+    if (!colorStr) return undefined;
+    
+    if (colorStr.startsWith('#')) {
+        if (colorStr.length === 4) {
+            return '#' + colorStr[1]+colorStr[1] + colorStr[2]+colorStr[2] + colorStr[3]+colorStr[3];
+        }
+        return colorStr.slice(0, 7); 
+    }
+    
+    const match = colorStr.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (match) {
+        const r = parseInt(match[1], 10).toString(16).padStart(2, '0');
+        const g = parseInt(match[2], 10).toString(16).padStart(2, '0');
+        const b = parseInt(match[3], 10).toString(16).padStart(2, '0');
+        return `#${r}${g}${b}`;
+    }
+    
+    return undefined; // in case conversion fails
+};
+
 export function smoothPoints(pts, iterations = 2) {
     if (pts.length < 6) return pts;
     let smoothed = [...pts];

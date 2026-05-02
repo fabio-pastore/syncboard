@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { Copy, Trash2, ListPlus, Eye } from 'lucide-react';
+import { RgbaToHex } from '../../utils/boardUtils';
+import LocalColorPicker from './LocalColorPicker';
 
-export default function SelectionContextMenu({ visible, position, onCopy, onDelete, onModify }) {
+export default function SelectionContextMenu({ visible, position, selectedLines, onCopy, onDelete, onModify }) {
     const [modifiedBrushColor, setModifiedBrushColor] = useState("#000000");
-    const [modifiedFillColor, setModifiedFillColor] = useState("#000000");
+    const [modifiedFillColor, setModifiedFillColor] = useState("#ffffff");
     const [modifiedStrokeWidth, setModifiedStrokeWidth] = useState(3);
     const [modifiedOpacity, setModifiedOpacity] = useState(1);
     const [activeMenu, setActiveMenu] = useState(null); // 'width' if width menu is open or 'opacity' for opacity menu, else null
@@ -16,12 +18,44 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
     }
 }, [visible]);
 
+    const selectedCount = selectedLines?.length || 0;
+    const selectedShape = selectedCount === 1 ? selectedLines[0] : null;
+    const shapeId = selectedShape?.id;
+    const shapeColor = selectedShape?.color;
+    const shapeFill = selectedShape?.fill;
+    const shapeStrokeWidth = selectedShape?.strokeWidth;
+    const shapeOpacity = selectedShape?.opacity;
+
+    useEffect(() => {
+        if (!visible) setActiveMenu(null);
+    }, [visible]);
+
+    useEffect(() => {
+        if (selectedCount === 1) {
+            setModifiedBrushColor(RgbaToHex(shapeColor) || "#000000");
+            setModifiedFillColor(RgbaToHex(shapeFill) || "#ffffff");
+            setModifiedStrokeWidth(shapeStrokeWidth || 3);
+            setModifiedOpacity(shapeOpacity || 1);
+        } else if (selectedCount > 1) {
+            setModifiedBrushColor("#000000");
+            setModifiedFillColor("#ffffff");
+            setModifiedStrokeWidth(3);
+            setModifiedOpacity(1);
+        }
+    }, [selectedCount, shapeId, shapeColor, shapeFill, shapeStrokeWidth, shapeOpacity]);
+
     useEffect(() => {
         if (isInitialMount.current) {
             isInitialMount.current = false;
             return;
         }
-        onModify(modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity);
+        
+        // timeout is necessary unless you wish to update the board component ~60 times per second (don't remove this)
+        const timeoutId = setTimeout(() => {
+            onModify(modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity);
+        }, 10); 
+        
+        return () => clearTimeout(timeoutId);
     }, [modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity]);
 
     return (
@@ -57,25 +91,19 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
 
             <div className='w-px h-5 bg-gray-200'></div>
 
-            <label className="m-2 relative w-4 h-4 cursor-pointer items-center flex transition hover:scale-110" title="Brush color">
-                    <div className="w-4 h-4 rounded-full border-2"
-                        style={{
-                            background: modifiedBrushColor,
-                            borderColor: `color-mix(in srgb, ${modifiedBrushColor}, black 30%)`
-                        }}
-                    />
-                    <input type="color" value={modifiedBrushColor} onChange={(e) => setModifiedBrushColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
-            </label>
+            <LocalColorPicker 
+                title="Brush color"
+                className="w-4 h-4 m-2"
+                value={modifiedBrushColor}
+                onChange={setModifiedBrushColor}
+            />
 
-            <label className="m-2 relative w-4 h-4 cursor-pointer items-center flex transition hover:scale-110" title="Fill color">
-                    <div className="w-4 h-4 rounded-full border-2"
-                        style={{
-                            background: modifiedFillColor,
-                            borderColor: `color-mix(in srgb, ${modifiedFillColor}, black 30%)`
-                        }}
-                    />
-                    <input type="color" value={modifiedFillColor} onChange={(e) => setModifiedFillColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
-            </label>
+            <LocalColorPicker 
+                title="Fill color"
+                className="w-4 h-4 m-2"
+                value={modifiedFillColor}
+                onChange={setModifiedFillColor}
+            />
 
             <div className="relative flex items-center">
                 <button

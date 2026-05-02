@@ -9,6 +9,8 @@ const boardSchema = new mongoose.Schema({
         role: { type: String, enum: ['viewer', 'editor'], default: 'viewer' }
     }],
     content: { type: Array, default: [] },
+    bgType: { type: String, default: null },
+    bgColor: { type: String, default: null },
     thumbnail: { type: String, default: null},
     shareTokens: [{
         token: { type: String, required: true },

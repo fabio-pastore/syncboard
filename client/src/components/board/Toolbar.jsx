@@ -1,5 +1,6 @@
 import { Pencil, Eraser, Minus, Plus, Undo2, Redo2, Highlighter, Shapes, Triangle, Square, Circle as CircleIcon, PaintBucket, LassoSelect } from "lucide-react";
 import ToolButton from "./ToolButton";
+import LocalColorPicker from "./LocalColorPicker";
 import { PRESET_COLORS } from "../../utils/boardConstants";
 import { getContrastColor } from "../../utils/boardUtils";
 
@@ -123,25 +124,17 @@ export default function Toolbar({
 
                 <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-                <label className="relative w-6 h-6 cursor-pointer" title="Shape border color">
-                    <div className="w-6 h-6 rounded-full border-2 transition hover:scale-110"
-                        style={{
-                            background: shapeBorderColor,
-                            borderColor: `color-mix(in srgb, ${shapeBorderColor}, black 30%)`
-                        }}
-                    />
-                    <input type="color" value={shapeBorderColor} onChange={(e) => setShapeBorderColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
-                </label>
+                <LocalColorPicker 
+                    title="Shape border color"
+                    value={shapeBorderColor}
+                    onChange={setShapeBorderColor}
+                />
 
-                <label className="relative w-6 h-6 cursor-pointer" title="Shape color">
-                    <div className="w-6 h-6 rounded-full border-2 transition hover:scale-110"
-                        style={{
-                            background: shapeColor,
-                            borderColor: `color-mix(in srgb, ${shapeColor}, black 30%)`
-                        }}
-                    />
-                    <input type="color" value={shapeColor} onChange={(e) => setShapeColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
-                </label>
+                <LocalColorPicker 
+                    title="Shape color"
+                    value={shapeColor}
+                    onChange={setShapeColor}
+                />
 
                 <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
@@ -206,15 +199,12 @@ export default function Toolbar({
                 />
             ))}
 
-            <label className="relative w-7 h-7 cursor-pointer" title="Color">
-                <div className="w-7 h-7 rounded-full border-2 transition hover:scale-110"
-                    style={{
-                        background: tool === 'highlighter' ? highlighterColor : brushColor,
-                        borderColor: `color-mix(in srgb, ${tool === 'highlighter' ? highlighterColor : brushColor}, black 30%)`
-                    }}
-                />
-                <input type="color" value={tool === 'highlighter' ? highlighterColor : brushColor} onChange={(e) => setColor(e.target.value)} className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
-            </label>
+            <LocalColorPicker 
+                title="Color"
+                className="w-7 h-7"
+                value={tool === 'highlighter' ? highlighterColor : brushColor}
+                onChange={setColor}
+            />
 
             <div className="w-px h-6 bg-gray-300 mx-1"></div>
 

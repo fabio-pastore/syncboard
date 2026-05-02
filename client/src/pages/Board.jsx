@@ -139,12 +139,51 @@ export default function Board({ shared = false }) {
 
     const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries, 
             role, error, setError, socketRef, chatOpenRef, chatOpen, setChatOpen, chatMessages, 
-            setChatMessages, unreadMessages, setUnreadMessages, cursors
-        } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
+            setChatMessages, unreadMessages, setUnreadMessages, cursors, bgColor, setBgColor, 
+            bgPattern, setBgPattern } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
     useEffect(() => { shapeRef.current = shape }, [shape]);
+    useEffect(() => {
+        bgPatternRef.current = bgPattern;
+        updateBackgroundStyle(stagePositionRef.current, scale);
+    }, [bgPattern, scale]);
+
+    const containerRef = useRef(null);
+    const bgPatternRef = useRef(bgPattern);
+
+    const handleBgPatternEdit = (newPattern) => {
+        setBgPattern(newPattern);
+        socketRef.current?.emit('board:bg:modify', { newType: newPattern, newColor: null });
+    }
+
+    const handleBgColorEdit = (newColor) => {
+        setBgColor(newColor);
+        socketRef.current?.emit('board:bg:modify', { newType: null, newColor: newColor });
+    }
+
+    const updateBackgroundStyle = (pos, currentScale) => {
+        if (!containerRef.current) return;
+        const pattern = bgPatternRef.current;
+        
+        if (pattern === 'none') {
+            containerRef.current.style.backgroundImage = 'none';
+            return;
+        }
+
+        const size = 40 * currentScale;
+        containerRef.current.style.backgroundPosition = `${pos.x}px ${pos.y}px`;
+        
+        if (pattern === 'grid') {
+            containerRef.current.style.backgroundSize = `${size}px ${size}px`;
+            containerRef.current.style.backgroundImage = `linear-gradient(to right, #d1d5db 1px, transparent 1px), linear-gradient(to bottom, #d1d5db 1px, transparent 1px)`;
+        } else if (pattern === 'lines') {
+            containerRef.current.style.backgroundSize = `100% ${size}px`;
+            containerRef.current.style.backgroundImage = `linear-gradient(to bottom, #d1d5db 1px, transparent 1px)`;
+        }
+        else {}
+    };
 
     const { isDraggingSelectionRef, handleDragStart, handleDragMove, handleDragEnd } = useShapeDrag({
         stageRef, linesRef, setLines, selectionBBoxRef, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsDraggingSelection, setIsManipulating
@@ -464,6 +503,7 @@ export default function Board({ shared = false }) {
             };
             stageRef.current.position(newPos);
             stagePositionRef.current = newPos;
+            updateBackgroundStyle(newPos, scale);
             return;
         }
 
@@ -726,12 +766,14 @@ export default function Board({ shared = false }) {
             };
             stage.position(newPos);
             stagePositionRef.current = newPos;
+            updateBackgroundStyle(newPos, clampedScale);
         } else {
             const dx = e.evt.deltaX;
             const dy = e.evt.deltaY;
             const newPos = { x: stage.x() - dx, y: stage.y() - dy };
             stage.position(newPos);
             stagePositionRef.current = newPos;
+            updateBackgroundStyle(newPos, scale);
         }
     }, []);
 
@@ -1024,7 +1066,12 @@ export default function Board({ shared = false }) {
     }
     
     return (
-        <div className="h-screen overflow-hidden relative bg-white" style={{ height: '100dvh' }} onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}>
+        <div 
+            ref={containerRef} 
+            className="h-screen overflow-hidden relative" 
+            style={{ height: '100dvh', backgroundColor: bgColor }} 
+            onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
+        >
 
             <div className="text-xl font-semibold fixed top-1 right-[50vw] translate-x-1/2 z-[1] pointer-events-none">
                 <span className="text-violet-700/45">Sync</span>
@@ -1468,7 +1515,7 @@ export default function Board({ shared = false }) {
 
             <div 
                 className={`
-                    fixed bottom-2 right-2 z-20 flex flex-col w-80 md:w-96 h-[93vh]
+                    fixed bottom-2 right-2 z-20 flex flex-col w-80 md:w-96 h-[84vh]
                     bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden font-sans
                     transition-all duration-300 ease-in-out origin-bottom-right 
                     ${chatOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}                                                                                                               
@@ -1573,8 +1620,10 @@ export default function Board({ shared = false }) {
                     onExportPdf={exportToPDF}
                 />
             )}
+
             <SelectionContextMenu 
                 visible={selectionMenuVisible}
+                selectedLines={lines.filter(l => selectedIds.includes(l.id))}
                 onCopy={handleCopy}
                 onModify={handleModifySelection}
                 onDelete={handleDeleteSelection}
@@ -1590,6 +1639,11 @@ export default function Board({ shared = false }) {
                 }}
                 position={rightClickScreenPosRef.current}
                 onClose={() => setIsOpenContextMenu(false)}
+                currentBackground={bgPattern}
+                onBackgroundChange={handleBgPatternEdit}
+                canModifyBackground={role === 'editor'}
+                currentBgColor={bgColor}       
+                onBgColorChange={handleBgColorEdit}
             />                
         </div>
     );
