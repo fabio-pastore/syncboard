@@ -1,5 +1,5 @@
 import { useRef, useCallback } from "react";
-import { NUM_MAX_UNDO, HANDLE_BOTTOM_RIGHT, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, HANDLE_BOTTOM_LEFT, HANDLE_TOP, HANDLE_RIGHT, HANDLE_BOTTOM, HANDLE_LEFT } from "../utils/boardConstants";
+import { NUM_MAX_UNDO, UPDATE_INTERVAL, HANDLE_BOTTOM_RIGHT, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, HANDLE_BOTTOM_LEFT, HANDLE_TOP, HANDLE_RIGHT, HANDLE_BOTTOM, HANDLE_LEFT } from "../utils/boardConstants";
 import { rotatePoint } from "../utils/boardUtils";
 
 export default function useShapeResize({
@@ -19,6 +19,7 @@ export default function useShapeResize({
     const initialBBoxRef = useRef(null);
     const linesBeforeResizeRef = useRef([]);
     const initialBoxRotRef = useRef(0);
+    const lastTmpResizeEmitRef = useRef(0);
 
     const handleResizeStart = useCallback((e, current_handle) => {
         e.cancelBubble = true;
@@ -207,7 +208,16 @@ export default function useShapeResize({
             linesRef.current = updated;
             return updated;
         });
-    }, [stageRef, selectedIdsRef, setSelectionBBox, setLines]);
+
+        const now = Date.now();
+        if (now - lastTmpResizeEmitRef.current > UPDATE_INTERVAL) {
+            lastTmpResizeEmitRef.current = now;
+            const resizedLines = selectedIdsRef.current.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean);
+            if (resizedLines.length > 0) {
+                socketRef.current?.emit('board:draw:tmpresize', resizedLines);
+            }
+        }
+    }, [stageRef, selectedIdsRef, setSelectionBBox, setLines, socketRef]);
 
     const handleResizeEnd = useCallback(() => {
         const resizedLinesPairs = selectedIdsRef.current.map(id => {

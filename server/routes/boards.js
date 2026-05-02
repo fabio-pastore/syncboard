@@ -1,6 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const Board = require('../models/Board');
+const BoardLine = require('../models/BoardLine');
 const authMiddleware = require('../middleware/auth')
 
 const router = express.Router();
@@ -65,11 +66,16 @@ router.get('/:id', async (req, res) => {
             ]
         }).populate('sharedWith.user', 'username');
         if (!board) return res.status(404).json({ error: 'Board not found'});
-        res.json(board);
+
+        const lineDocs = await BoardLine.find({ boardId: board._id }).lean();
+        const boardObj = board.toObject();
+        boardObj.content = lineDocs.map(doc => doc.data);
+
+        res.json(boardObj);
     }
     catch (err) {
         console.error('GET /boards/:id error:', err);
-        res.status(500).json({ error: 'Server rror'});
+        res.status(500).json({ error: 'Server error'});
     }
 });
 
@@ -180,6 +186,9 @@ router.delete('/:id', async (req, res) => {
             owner: req.userId
         });
         if (!board) return res.status(404).json({ error: 'Board not found'})
+
+        await BoardLine.deleteMany({ boardId: board._id });
+
         res.json({ message: 'Board deleted successfully'});
     } catch (err) {
         res.status(500).json( {error: 'Server error'});

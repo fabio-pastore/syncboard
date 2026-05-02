@@ -91,6 +91,7 @@ export default function Board({ shared = false }) {
     const rightClickPosRef = useRef({x: 0, y: 0});
     const rightClickScreenPosRef = useRef({x: 0,y: 0});
     const lastCursorEmitRef = useRef(0);
+    const lastEmittedPointCountRef = useRef(0);
 
     useEffect(() => {selectedIdsRef.current = selectedIds}, [selectedIds]);
     useEffect(() => {selectionLassoDataRef.current = selectionLasso}, [selectionLasso]);
@@ -194,10 +195,9 @@ export default function Board({ shared = false }) {
             });
         }
 
-        clearSelection();
         socketRef.current?.emit('board:draw:modify_selection', linePairs.map(entry => entry.new_line));
 
-    }, [selectedIdsRef, linesRef, setEditHistory, socketRef, clearSelection])
+    }, [selectedIdsRef, linesRef, setEditHistory, socketRef])
 
     const handleDeleteSelection = useCallback(() => {
         if (selectedIdsRef.current.length === 0) return;
@@ -376,6 +376,7 @@ export default function Board({ shared = false }) {
         }
 
         activeLineDataRef.current = newLine;
+        lastEmittedPointCountRef.current = 0; // we reset delta tracking for new line
         const isCircle = toolRef.current === 'shape' && shapeRef.current === 'circle';
 
         if (isCircle) {
@@ -428,10 +429,19 @@ export default function Board({ shared = false }) {
         const pointerPos = stage.getPointerPosition();
         const pointerScale = stage.scaleX() || 1;
 
-        // send cursor position every few ms
+        // send cursor position + viewport bounds every few ms
         const cursorNow = Date.now();
         if (cursorNow - lastCursorEmitRef.current > CURSOR_EMIT_INTERVAL) {
-            const cursorPos = { x: (pointerPos.x - stage.x()) / pointerScale, y: (pointerPos.y - stage.y()) / pointerScale };
+            const cursorPos = {
+                x: (pointerPos.x - stage.x()) / pointerScale,
+                y: (pointerPos.y - stage.y()) / pointerScale,
+                viewport: {
+                    x1: -stage.x() / pointerScale,
+                    y1: -stage.y() / pointerScale,
+                    x2: (window.innerWidth - stage.x()) / pointerScale,
+                    y2: (window.innerHeight - stage.y()) / pointerScale,
+                },
+            };
             socketRef.current?.emit('board:cursor:move', cursorPos);
             lastCursorEmitRef.current = cursorNow;
         }
@@ -562,7 +572,22 @@ export default function Board({ shared = false }) {
 
         const now = Date.now();
         if (now - lastUpdate > UPDATE_INTERVAL) {
-            socketRef.current?.emit('board:draw:tmpline', activeLineDataRef.current);
+            const line = activeLineDataRef.current;
+            const isFreehand = line.type === 'line' && line.tension > 0;
+
+            if (isFreehand && lastEmittedPointCountRef.current > 0) {
+                const newPoints = line.points.slice(lastEmittedPointCountRef.current);
+                if (newPoints.length > 0) {
+                    socketRef.current?.emit('board:draw:tmpline', {
+                        id: line.id,
+                        newPoints,
+                        isDelta: true,
+                    });
+                }
+            } else {
+                socketRef.current?.emit('board:draw:tmpline', line);
+            }
+            lastEmittedPointCountRef.current = line.points.length;
             setLastUpdate(now);
         }
     }, [canDraw, handleResizeDrag, handleRotationDrag, handleDragMove, isResizingRef, isRotatingRef, isDraggingSelectionRef]);
@@ -653,6 +678,7 @@ export default function Board({ shared = false }) {
         }
 
         activeLineDataRef.current = null;
+        lastEmittedPointCountRef.current = 0;
 
         setEditHistory((prev) => {
             let newHistory;

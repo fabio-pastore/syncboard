@@ -1,5 +1,5 @@
 import { useRef, useCallback } from "react";
-import { NUM_MAX_UNDO } from "../utils/boardConstants";
+import { NUM_MAX_UNDO, UPDATE_INTERVAL } from "../utils/boardConstants";
 import { translatePoints } from "../utils/boardUtils";
 
 export default function useShapeDrag({
@@ -17,6 +17,7 @@ export default function useShapeDrag({
     const isDraggingSelectionRef = useRef(false);
     const dragStartRef = useRef(null);
     const linesBeforeDragRef = useRef([]);
+    const lastTmpDragEmitRef = useRef(0);
 
     const handleDragStart = useCallback((pos) => {
         setIsDraggingSelection(true);
@@ -60,7 +61,16 @@ export default function useShapeDrag({
             globalCenterX: prev.globalCenterX !== undefined ? prev.globalCenterX + dx : undefined,
             globalCenterY: prev.globalCenterY !== undefined ? prev.globalCenterY + dy : undefined
         } : null);
-    }, [stageRef, selectedIdsRef, setLines, setSelectionBBox]);
+
+        const now = Date.now();
+        if (now - lastTmpDragEmitRef.current > UPDATE_INTERVAL) {
+            lastTmpDragEmitRef.current = now;
+            const draggedLines = selectedIdsRef.current.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean);
+            if (draggedLines.length > 0) {
+                socketRef.current?.emit('board:draw:tmpdrag', draggedLines);
+            }
+        }
+    }, [stageRef, selectedIdsRef, setLines, setSelectionBBox, socketRef]);
 
     const handleDragEnd = useCallback(() => {
         setIsDraggingSelection(false);

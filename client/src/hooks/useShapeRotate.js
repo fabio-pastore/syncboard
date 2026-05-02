@@ -1,5 +1,5 @@
 import { useRef, useCallback } from "react";
-import { NUM_MAX_UNDO } from "../utils/boardConstants";
+import { NUM_MAX_UNDO, UPDATE_INTERVAL } from "../utils/boardConstants";
 import { rotatePoint } from "../utils/boardUtils";
 
 export default function useShapeRotate({
@@ -18,6 +18,7 @@ export default function useShapeRotate({
     const dragStartAngleRef = useRef(0);
     const initialBoxRotRef = useRef(0);
     const linesBeforeRotateRef = useRef([]);
+    const lastTmpRotateEmitRef = useRef(0);
 
     const handleRotationStart = useCallback((pointerPos, pointerScale) => { 
         const currSelectionBBox = selectionBBoxRef.current;
@@ -82,7 +83,16 @@ export default function useShapeRotate({
 
             return { ...l, points: newPoints, x: newX, y: newY, offsetX: newOffsetX, offsetY: newOffsetY };
         }));
-    }, [stageRef, selectionBBoxRef, selectedIdsRef, setSelectionBBoxRotation, setLines]);
+
+        const now = Date.now();
+        if (now - lastTmpRotateEmitRef.current > UPDATE_INTERVAL) {
+            lastTmpRotateEmitRef.current = now;
+            const rotatedLines = selectedIdsRef.current.map(id => linesRef.current?.find(l => l.id === id)).filter(Boolean);
+            if (rotatedLines.length > 0) {
+                socketRef.current?.emit('board:draw:tmprotate', rotatedLines);
+            }
+        }
+    }, [stageRef, selectionBBoxRef, selectedIdsRef, setSelectionBBoxRotation, setLines, socketRef, linesRef]);
 
     const handleRotationEnd = useCallback(() => {
         isRotatingRef.current = false;

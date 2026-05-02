@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import { apiFetch } from "../api";
 import { SOCKET_URL, CURSOR_COLORS, CURSOR_IDLE_REMOVE } from "../utils/boardConstants";
+import { decodeCursorBatch } from "../utils/boardUtils";
 
 export default function useSocket({ id, token, shared, onShapeUpdate, reorderLines }) {
     const [board, setBoard] = useState(null);
@@ -96,6 +97,32 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                     else return [...prev, line];
                 });
                 onShapeUpdate(line.id); // if updated line in any of currently selected lines, clear the selection to avoid display of outdated selectionBBox 
+            });
+
+
+            sock.on('board:draw:tmpline', (data) => {
+                if (data.isDelta) {
+                    // this appends only new points to the existing temp line
+                    setLines((prev) => {
+                        const idx = prev.findIndex(l => l.id === data.id);
+                        if (idx === -1) return prev;
+                        const updated = [...prev];
+                        updated[idx] = { ...updated[idx], points: [...updated[idx].points, ...data.newPoints] };
+                        return updated;
+                    });
+                } else {
+                    // update or add
+                    setLines((prev) => {
+                        const idx = prev.findIndex(l => l.id === data.id);
+                        if (idx !== -1) {
+                            const updated = [...prev];
+                            updated[idx] = data;
+                            return updated;
+                        }
+                        return [...prev, data];
+                    });
+                }
+                onShapeUpdate(data.id);
             });
 
             sock.on('board:draw:erase', (lineId) => {
@@ -263,12 +290,23 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 else setLines((prev) => prev.filter((l) => l.id !== lineId));
             });
 
-            sock.on('board:cursor:update', ({ socketId, username, x, y }) => {
-                if (socketId === mySocketIdRef.current) return;
-                setCursors((prev) => ({
-                    ...prev,
-                    [socketId]: { username, x, y, lastSeen: Date.now(), color: getCursorColor(socketId) },
-                }));
+            // binary cursor + batching
+            sock.on('board:cursor:batch', (buffer) => {
+                const updates = decodeCursorBatch(buffer);
+                setCursors((prev) => {
+                    const next = { ...prev };
+                    for (const { socketId, username, x, y } of updates) {
+                        if (socketId === mySocketIdRef.current) continue;
+                        next[socketId] = {
+                            username,
+                            x,
+                            y,
+                            lastSeen: Date.now(),
+                            color: prev[socketId]?.color || getCursorColor(socketId),
+                        };
+                    }
+                    return next;
+                });
             });
 
             sock.on('board:cursor:leave', ({ socketId }) => {

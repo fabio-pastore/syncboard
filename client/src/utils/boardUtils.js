@@ -293,3 +293,37 @@ export function getDynamicCursor(handleId, boxRot) {
         
         return 'default';
     };
+
+/**
+ * why did i decide to encode it
+ * Format: [count: uint16] per cursor: [idLen: uint8][id: utf8][x: float32][y: float32][nameLen: uint8][name: utf8]
+ */
+export function decodeCursorBatch(buffer) {
+    const view = new DataView(buffer);
+    let offset = 0;
+
+    const count = view.getUint16(offset);
+    offset += 2;
+
+    const updates = [];
+    for (let i = 0; i < count; i++) {
+        const socketIdLen = view.getUint8(offset);
+        offset += 1;
+        const socketId = new TextDecoder().decode(new Uint8Array(buffer, offset, socketIdLen));
+        offset += socketIdLen;
+
+        const x = view.getFloat32(offset);
+        offset += 4;
+        const y = view.getFloat32(offset);
+        offset += 4;
+
+        const usernameLen = view.getUint8(offset);
+        offset += 1;
+        const username = new TextDecoder().decode(new Uint8Array(buffer, offset, usernameLen));
+        offset += usernameLen;
+
+        updates.push({ socketId, x, y, username });
+    }
+
+    return updates;
+}
