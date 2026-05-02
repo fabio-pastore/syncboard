@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Copy, Trash2, ListPlus, Check, Eye } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Copy, Trash2, ListPlus, Eye } from 'lucide-react';
 
 export default function SelectionContextMenu({ visible, position, onCopy, onDelete, onModify }) {
     const [modifiedBrushColor, setModifiedBrushColor] = useState("#000000");
@@ -7,6 +7,7 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
     const [modifiedStrokeWidth, setModifiedStrokeWidth] = useState(3);
     const [modifiedOpacity, setModifiedOpacity] = useState(1);
     const [activeMenu, setActiveMenu] = useState(null); // 'width' if width menu is open or 'opacity' for opacity menu, else null
+    const isInitialMount = useRef(true);
 
     // hide sub-menus if main menu is closed
     useEffect(() => {
@@ -14,6 +15,14 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
         setActiveMenu(null);
     }
 }, [visible]);
+
+    useEffect(() => {
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            return;
+        }
+        onModify(modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity);
+    }, [modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity]);
 
     return (
         <div 
@@ -123,19 +132,6 @@ export default function SelectionContextMenu({ visible, position, onCopy, onDele
                     </div>
                 )}
             </div>
-
-            <div className='w-px h-5 bg-gray-200'></div>
-
-            <button
-                onClick={() => {
-                    onModify(modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity);
-                    setActiveMenu(null); 
-                }}
-                title="Apply"
-                className='p-2 rounded-xl transition cursor-pointer hover:bg-green-50 text-green-500 hover:text-green-600'
-            >
-                <Check size={16} />
-            </button>
 
         </div>
     );
