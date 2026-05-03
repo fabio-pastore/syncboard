@@ -65,6 +65,7 @@ export default function Board({ shared = false }) {
     const [isDraggingSelection, setIsDraggingSelection] = useState(false);
 
     const stageRef = useRef(null);
+    const scaleRef = useRef(1.0);
     const toolRef = useRef(tool);
     const shapeRef = useRef(shape);
     const eraserCursorRef = useRef(null);
@@ -95,6 +96,7 @@ export default function Board({ shared = false }) {
 
     const containerRef = useRef(null);
 
+    useEffect(() => {scaleRef.current = scale}, [scale]);
     useEffect(() => { selectedIdsRef.current = selectedIds }, [selectedIds]);
     useEffect(() => { selectionLassoDataRef.current = selectionLasso }, [selectionLasso]);
     useEffect(() => { selectionBBoxRef.current = selectionBBox }, [selectionBBox]);
@@ -159,9 +161,9 @@ export default function Board({ shared = false }) {
     });
 
     const { touchCountRef } = useTouchHandlers({
-        stageRef, setScale, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
+        stageRef, setScale, scaleRef, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
         activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef, isResizingRef,
-        touchDrawModeRef
+        touchDrawModeRef, stagePositionRef, updateBackgroundStyle
     });
 
     const { exportToPng, exportToPDF, saveThumbnail } = useExport({ stageRef, linesRef, lines, board, id, shared, bgColor, bgPattern });
@@ -205,7 +207,7 @@ export default function Board({ shared = false }) {
 
         
         if (e.evt.pointerType === 'touch') {
-            if (!touchDrawModeRef.current) return; // Stylus mode: block all touch drawing
+            if (!touchDrawModeRef.current) return; // stylus mode: block all touch drawing
             if (touchCountRef.current >= 2) return; // 2+ fingers: let useTouchHandlers do pan/zoom
         }
 
@@ -397,11 +399,11 @@ export default function Board({ shared = false }) {
             };
             stageRef.current.position(newPos);
             stagePositionRef.current = newPos;
-            updateBackgroundStyle(newPos, scale);
+            updateBackgroundStyle(newPos, scaleRef.current);
             return;
         }
 
-        // In stylus mode block touch from drawing and in finger-draw mode, allow touch
+        // in stylus mode block touch from drawing and in finger-draw mode, allow touch
         if (e.evt.pointerType === 'touch' && !touchDrawModeRef.current) return;
         if (!canDraw) return;
 
@@ -654,6 +656,7 @@ export default function Board({ shared = false }) {
             const clampedScale = Math.max(0.1, Math.min(newScale, 10));
             stage.scale({ x: clampedScale, y: clampedScale });
             setScale(clampedScale);
+            scaleRef.current = clampedScale;
             displayZoomMeter();
             const newPos = {
                 x: pointer.x - mousePointTo.x * clampedScale,
@@ -668,7 +671,7 @@ export default function Board({ shared = false }) {
             const newPos = { x: stage.x() - dx, y: stage.y() - dy };
             stage.position(newPos);
             stagePositionRef.current = newPos;
-            updateBackgroundStyle(newPos, scale);
+            updateBackgroundStyle(newPos, scaleRef.current);
         }
     }, []);
 

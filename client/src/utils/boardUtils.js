@@ -29,6 +29,21 @@ export const RgbaToHex = (colorStr) => {
     return undefined; // in case conversion fails
 };
 
+export const calculateLuminosity = (hex) => { 
+    if (!hex) return;
+
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+
+    const R_COEFF = 0.299
+    const G_COEFF = 0.587
+    const B_COEFF = 0.114
+    
+    // NOTE: if returned value is > 128 then color is to be considered light, if < 128 then it is dark
+    return (R_COEFF * r + G_COEFF * g + B_COEFF * b); 
+}
+
 export function smoothPoints(pts, iterations = 2) {
     if (pts.length < 6) return pts;
     let smoothed = [...pts];

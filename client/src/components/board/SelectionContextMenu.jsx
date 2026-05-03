@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Copy, Trash2, ListPlus, Eye } from 'lucide-react';
 import { RgbaToHex } from '../../utils/boardUtils';
+import { INPUT_UPDATE_INTERVAL } from '../../utils/boardConstants';
 import LocalColorPicker from './LocalColorPicker';
 
 export default function SelectionContextMenu({ visible, position, selectedLines, onCopy, onDelete, onModify }) {
@@ -26,6 +27,19 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
     const shapeStrokeWidth = selectedShape?.strokeWidth;
     const shapeOpacity = selectedShape?.opacity;
 
+    const allEqual = (arr) => {
+        return (new Set(arr).size == 1);
+    }
+
+    const allEqualProperties = () => {
+        return (
+            allEqual(selectedLines.map(l => RgbaToHex(l.color))) && 
+            allEqual(selectedLines.map(l => RgbaToHex(l.fill))) && 
+            allEqual(selectedLines.map(l => l.strokeWidth)) && 
+            allEqual(selectedLines.map(l => l.opacity ? l.opacity : 1))        
+        );
+    }
+
     useEffect(() => {
         if (!visible) setActiveMenu(null);
     }, [visible]);
@@ -36,7 +50,14 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
             setModifiedFillColor(RgbaToHex(shapeFill) || "#ffffff");
             setModifiedStrokeWidth(shapeStrokeWidth || 3);
             setModifiedOpacity(shapeOpacity || 1);
-        } else if (selectedCount > 1) {
+        }
+        else if (allEqualProperties()) {
+            setModifiedBrushColor(RgbaToHex(selectedLines[0].color));
+            setModifiedFillColor(RgbaToHex(selectedLines[0].fill));
+            setModifiedStrokeWidth(selectedLines[0].strokeWidth);
+            setModifiedOpacity(selectedLines[0].opacity ? selectedLines[0].opacity : 1);
+        }
+        else {
             setModifiedBrushColor("#000000");
             setModifiedFillColor("#ffffff");
             setModifiedStrokeWidth(3);
@@ -53,7 +74,7 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
         // timeout is necessary unless you wish to update the board component ~60 times per second (don't remove this)
         const timeoutId = setTimeout(() => {
             onModify(modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity);
-        }, 10); 
+        }, INPUT_UPDATE_INTERVAL); 
         
         return () => clearTimeout(timeoutId);
     }, [modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity]);

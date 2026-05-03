@@ -3,6 +3,7 @@
 // drastically reducing performance
 
 import { useState, useEffect, useRef } from "react";
+import { INPUT_UPDATE_INTERVAL } from "../../utils/boardConstants";
 
 export default function LocalColorPicker({ value, onChange, title, className = "w-6 h-6" }) {
     const [localColor, setLocalColor] = useState(value);
@@ -18,7 +19,7 @@ export default function LocalColorPicker({ value, onChange, title, className = "
     useEffect(() => {
         const timeoutId = setTimeout(() => {
             if (localColor !== value) onChange(localColor);
-        }, 10);
+        }, INPUT_UPDATE_INTERVAL);
         return () => clearTimeout(timeoutId);
     }, [localColor, value, onChange]);
 

@@ -41,7 +41,6 @@ export default function Toolbar({
     return (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-10">
 
-           
             <div
                 id='highlighter_op_selector'
                 className="absolute bottom-14 left-6 bg-white flex items-center gap-1 px-2 py-4 border border-gray-200 rounded-2xl shadow-lg"
@@ -85,7 +84,6 @@ export default function Toolbar({
 
                 <div className="w-px h-6 bg-gray-300 mx-1 hidden md:block"></div>
 
-                {/* Row 2 (mobile) / Section 2 (desktop): Style controls */}
                 <div className="flex items-center gap-1">
                     <LocalColorPicker 
                         title="Shape border color"
@@ -177,8 +175,23 @@ export default function Toolbar({
 
             <div className="bg-white flex items-center gap-1 px-3 py-2 
                 border border-gray-200 rounded-2xl backdrop-blur-md shadow-2xl
-                max-w-[95vw] overflow-x-auto overflow-y-visible scrollbar-hide"
+                max-w-[95vw] overflow-x-auto overflow-y-visible"
             >
+                {isTouchDevice && (
+                    <>
+                        <ToolButton
+                            active={!touchDrawMode}
+                            onClick={() => setTouchDrawMode(prev => !prev)}
+                            title={touchDrawMode ? "Finger Draw Mode (1-finger draws, 2-finger pans)" : "Stylus Mode (stylus draws, 1-finger pans)"}
+                        >
+                            <Hand size={18} />
+                        </ToolButton>
+
+                        <div className="w-px h-6 bg-gray-300 mx-1 shrink-0"></div>
+                    </>
+                    
+                )}
+                
                 <ToolButton
                     active={tool === "pen"}
                     onClick={() => {
@@ -305,19 +318,6 @@ export default function Toolbar({
                 <ToolButton title="Redo" disabled={editHistory.history.length === 0 || editHistory.editIndex === editHistory.history.length - 1} onClick={handleRedo}>
                     <Redo2 size={18} />
                 </ToolButton>
-
-                {isTouchDevice && (
-                    <>
-                        <div className="w-px h-6 bg-gray-300 mx-1 shrink-0"></div>
-                        <ToolButton
-                            active={touchDrawMode}
-                            onClick={() => setTouchDrawMode(prev => !prev)}
-                            title={touchDrawMode ? "Finger Draw Mode (1-finger draws, 2-finger pans)" : "Stylus Mode (stylus draws, 1-finger pans)"}
-                        >
-                            <Hand size={18} />
-                        </ToolButton>
-                    </>
-                )}
             </div>
         </div>
     );

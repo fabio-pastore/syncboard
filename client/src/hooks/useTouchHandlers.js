@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 export default function useTouchHandlers({
     stageRef,
     setScale,
+    scaleRef,
     isDrawingRef,
     activeLineRef,
     activeLineDataRef,
@@ -12,10 +13,15 @@ export default function useTouchHandlers({
     isRotatingRef,
     isResizingRef,
     touchDrawModeRef,
+    stagePositionRef,
+    updateBackgroundStyle,
 }) {
     const touchCountRef = useRef(0);
     const lastTouchCenterRef = useRef(null);
     const lastPinchDistRef = useRef(null);
+
+    const updateBgRef = useRef(updateBackgroundStyle);
+    useEffect(()=> {updateBgRef.current = updateBackgroundStyle;}, [updateBackgroundStyle]);
 
     useEffect(() => {
         const container = stageRef.current?.container();
@@ -66,6 +72,8 @@ export default function useTouchHandlers({
                     const dy = t.clientY - lastTouchCenterRef.current.y;
                     const newPos = { x: stage.x() + dx, y: stage.y() + dy };
                     stage.position(newPos);
+                    stagePositionRef.current = newPos;
+                    updateBgRef.current(newPos, scaleRef.current);
                 }
                 lastTouchCenterRef.current = { x: t.clientX, y: t.clientY };
             } else if (fingers >= 2) {
@@ -87,12 +95,14 @@ export default function useTouchHandlers({
                     : oldScale;
                 stage.scale({ x: newScale, y: newScale });
                 setScale(newScale);
-
+                scaleRef.current = newScale;
                 const newPos = {
                     x: center.x - pointTo.x * newScale,
                     y: center.y - pointTo.y * newScale,
                 };
                 stage.position(newPos);
+                stagePositionRef.current = newPos;
+                updateBgRef.current(newPos, newScale);
                 lastTouchCenterRef.current = center;
                 lastPinchDistRef.current = dist;
             }
