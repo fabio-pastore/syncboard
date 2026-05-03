@@ -11,6 +11,7 @@ export default function useTouchHandlers({
     isPenActiveRef,
     isRotatingRef,
     isResizingRef,
+    touchDrawModeRef,
 }) {
     const touchCountRef = useRef(0);
     const lastTouchCenterRef = useRef(null);
@@ -26,6 +27,11 @@ export default function useTouchHandlers({
             const fingers = e.touches.length;
             touchCountRef.current = fingers;
             if (fingers === 1) {
+                if (touchDrawModeRef.current) {
+                    lastTouchCenterRef.current = null;
+                    lastPinchDistRef.current = null;
+                    return;
+                }
                 const t = e.touches[0];
                 lastTouchCenterRef.current = { x: t.clientX, y: t.clientY };
                 lastPinchDistRef.current = null;
@@ -53,6 +59,7 @@ export default function useTouchHandlers({
             const stage = stageRef.current;
 
             if (fingers === 1 && !lastPinchDistRef.current) {
+                if (touchDrawModeRef.current) return;
                 const t = e.touches[0];
                 if (lastTouchCenterRef.current) {
                     const dx = t.clientX - lastTouchCenterRef.current.x;

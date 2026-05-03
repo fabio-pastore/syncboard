@@ -4,7 +4,7 @@ export default function ToolButton({ children, active, onClick, title, disabled 
             onClick={onClick}
             disabled={disabled}
             title={title}
-            className={`p-2 rounded-xl transition cursor-pointer 
+            className={`p-2 rounded-xl transition cursor-pointer shrink-0
                 ${active ? "bg-violet-100 text-violet-700 cursor-pointer" : ""}
                 ${disabled ? "opacity-30 cursor-not-allowed" : ""}
             `}

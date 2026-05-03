@@ -17,7 +17,7 @@ function addTempBG(layer, box) {
     return bg;
 }
 
-export default function useExport({ stageRef, linesRef, lines, board, id, shared }) {
+export default function useExport({ stageRef, linesRef, lines, board, id, shared, bgColor, bgPattern }) {
     const exportToPng = useCallback(() => {
         if (!lines.length) return;
         const box = getSmallestRectangle(lines);
@@ -82,7 +82,55 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
 
         const pixelRatio = mw / captureW;
 
-        return stage.toDataURL({
+        const layer = stage.findOne('.draw-layer');  // temp background
+        const tempElements = [];
+
+        if (bgPattern === 'grid') {
+            const gridSize = 40;
+            for (let x = cropX; x <= cropX + captureW; x += gridSize) {
+                const line = new Konva.Line({
+                    points: [x, cropY, x, cropY + captureH],
+                    stroke: '#d1d5db',
+                    strokeWidth: 1,
+                });
+                layer.add(line);
+                tempElements.push(line);
+            }
+            for (let y = cropY; y <= cropY + captureH; y += gridSize) {
+                const line = new Konva.Line({
+                    points: [cropX, y, cropX + captureW, y],
+                    stroke: '#d1d5db',
+                    strokeWidth: 1,
+                });
+                layer.add(line);
+                tempElements.push(line);
+            }
+        } else if (bgPattern === 'lines') {
+            const lineSpacing = 40;
+            for (let y = cropY; y <= cropY + captureH; y += lineSpacing) {
+                const line = new Konva.Line({
+                    points: [cropX, y, cropX + captureW, y],
+                    stroke: '#d1d5db',
+                    strokeWidth: 1,
+                });
+                layer.add(line);
+                tempElements.push(line);
+            }
+        }
+
+        // background rect last and move to bottom so it sits below pattern lines
+        const bgRect = new Konva.Rect({
+            x: cropX,
+            y: cropY,
+            width: captureW,
+            height: captureH,
+            fill: bgColor || '#ffffff',
+        });
+        layer.add(bgRect);
+        bgRect.moveToBottom();
+        tempElements.push(bgRect);
+
+        const dataUrl = stage.toDataURL({
             x: cropX,
             y: cropY,
             width: captureW,
@@ -90,7 +138,11 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
             pixelRatio: pixelRatio,
             mimeType: 'image/png',
         });
-    }, [stageRef, linesRef]);
+
+        tempElements.forEach(el => el.destroy());
+
+        return dataUrl;
+    }, [stageRef, linesRef, bgColor, bgPattern]);
 
     const saveThumbnail = useCallback(async () => {
         if (!lines.length || !stageRef.current || shared) return;

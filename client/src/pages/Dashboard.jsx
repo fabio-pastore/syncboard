@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../api';
 import { useNavigate } from 'react-router-dom';
 import folderIcon from '../assets/icons/folder.png';
-import { Folder, Pencil, Trash2 } from 'lucide-react';
+import { Folder, Pencil, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import Profile from './Profile';
 
 function timeAgo(dateStr) {
@@ -223,6 +223,8 @@ export default function Dashboard() {
 
     const [draggedItem, setDraggedItem] = useState(null);
     const [draggedOverFolder, setDraggedOverFolder] = useState(null);
+    const [sortBy, setSortBy] = useState('updatedAt'); // 'name' | 'updatedAt' | 'createdAt'
+    const [sortOrder, setSortOrder] = useState('desc'); // 'asc' | 'desc'
 
     useEffect(() => { loadContents(); }, [currentFolder]);
 
@@ -339,23 +341,40 @@ export default function Dashboard() {
         catch (err) { setError(err.error || "Failed to delete board"); }
     }
 
+    function sortItems(items) {
+        const sorted = [...items];
+        sorted.sort((a, b) => {
+            let valA, valB;
+            if (sortBy === 'name') {
+                valA = (a.name || '').toLowerCase();
+                valB = (b.name || '').toLowerCase();
+                return sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            } else {
+                valA = new Date(a[sortBy] || 0).getTime();
+                valB = new Date(b[sortBy] || 0).getTime();
+                return sortOrder === 'asc' ? valA - valB : valB - valA;
+            }
+        });
+        return sorted;
+    }
+
     // server results otherwise data we know locally
     const isSearching = searchQuery.trim().length > 0;
-    const filteredFolders = isSearching && searchResults
+    const filteredFolders = sortItems(isSearching && searchResults
         ? searchResults.folders
-        : folders;
-    const filteredBoards = isSearching && searchResults
+        : folders);
+    const filteredBoards = sortItems(isSearching && searchResults
         ? searchResults.boards.filter(b => {
             const ownerId = b.owner?._id || b.owner;
             return ownerId === user.id;
         })
-        : boards;
-    const filteredShared = isSearching && searchResults
+        : boards);
+    const filteredShared = sortItems(isSearching && searchResults
         ? searchResults.boards.filter(b => {
             const ownerId = b.owner?._id || b.owner;
             return ownerId !== user.id;
         })
-        : sharedBoards;
+        : sharedBoards);
 
     const isEmpty = !(loading || searchLoading) && filteredFolders.length === 0 && filteredBoards.length === 0 && filteredShared.length === 0;
     const totalItems = filteredFolders.length + filteredBoards.length + filteredShared.length;
@@ -588,9 +607,44 @@ export default function Dashboard() {
 
                 {!loading && filteredBoards.length > 0 && (
                     <section className="mb-8">
-                        <div className="flex items-center gap-2 mb-3">
-                            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Boards</h2>
-                            <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">{filteredBoards.length}</span>
+                        <div className="flex items-center justify-between gap-2 mb-3">
+                            <div className="flex items-center gap-2">
+                                <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Boards</h2>
+                                <span className="text-[10px] font-medium text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">{filteredBoards.length}</span>
+                            </div>
+                            <div className="inline-flex items-center bg-white border border-gray-200 rounded-lg p-0.5 gap-0.5 shadow-sm">
+                                {[
+                                    { key: 'name', label: 'Name' },
+                                    { key: 'updatedAt', label: 'Updated' },
+                                    { key: 'createdAt', label: 'Created' },
+                                ].map((opt) => (
+                                    <button
+                                        key={opt.key}
+                                        onClick={() => setSortBy(opt.key)}
+                                        className={`
+                                            px-2 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer
+                                            ${sortBy === opt.key
+                                                ? 'bg-violet-50 text-violet-700 shadow-sm'
+                                                : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50'
+                                            }
+                                        `}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                                <div className="w-px h-4 bg-gray-200 mx-0.5" />
+                                <button
+                                    onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                                    className="p-1 rounded-md text-gray-400 hover:text-violet-600 hover:bg-violet-50 transition-all cursor-pointer"
+                                    title={sortOrder === 'asc' ? 'Ascending' : 'Descending'}
+                                >
+                                    {sortOrder === 'asc' ? (
+                                        <ArrowUp className="w-3 h-3 text-violet-500" />
+                                    ) : (
+                                        <ArrowDown className="w-3 h-3 text-violet-500" />
+                                    )}
+                                </button>
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                             {filteredBoards.map((board) => (
