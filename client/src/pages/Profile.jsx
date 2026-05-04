@@ -130,7 +130,8 @@ export default function Profile({ open, onClose }) {
                 setMessage('');
             }, 2500);
         } catch (err) {
-            setError(err.message || 'Failed to update profile');
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setError(`Failed to update profile${errorDetail ? `: ${errorDetail}` : ""}`);
         } finally {
             setSaving(false);
         }

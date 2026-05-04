@@ -19,7 +19,8 @@ export default function Signup() {
             await signup(email, username, password);
             navigate('/dashboard');
         } catch (err) {
-            setError("Failed to sign up: ", err.error);
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setError(`Failed to sign up${errorDetail ? `: ${errorDetail}` : ""}`);
         } finally {
             setLoading(false);
         }

@@ -18,7 +18,8 @@ export default function Login() {
             await login(identifier, password);
             navigate('/dashboard');
         } catch (err) {
-            setError("Failed to login: ", err.error);
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setError(`Failed to login${errorDetail ? `: ${errorDetail}` : ""}`);
         } finally {
             setLoading(false);
         }

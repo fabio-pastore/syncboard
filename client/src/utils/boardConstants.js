@@ -1,12 +1,12 @@
 export const SOCKET_URL = import.meta.env.VITE_SERVER_URL;
 
 export const UPDATE_INTERVAL = 16;
-export const NUM_MAX_UNDO = 32;
+export const NUM_MAX_UNDO = 64;
 export const MIN_POINT_DISTANCE = 3;
 export const MIN_POINT_DISTANCE_PEN = 1;
 export const WAIT_BEFORE_EXIT = 50; // ms
 export const ZOOM_DISPLAY_TIME = 2250; // ms
-export const INPUT_UPDATE_INTERVAL = 40; // ms
+export const INPUT_UPDATE_INTERVAL = 30; // ms
 export const HANDLE_TOP_LEFT = "top-left";
 export const HANDLE_TOP = "top";
 export const HANDLE_TOP_RIGHT = "top-right";

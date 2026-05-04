@@ -221,17 +221,18 @@ export default function Dashboard() {
     const [error, setError] = useState('');
     const [showProfile, setShowProfile] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState(null);
+    const [searchResults, setSearchResults] = useState(null); // null = not searching
     const [searchLoading, setSearchLoading] = useState(false);
     const [loading, setLoading] = useState(true);
 
     const [draggedItem, setDraggedItem] = useState(null);
     const [draggedOverFolder, setDraggedOverFolder] = useState(null);
-    const [sortBy, setSortBy] = useState('updatedAt'); 
-    const [sortOrder, setSortOrder] = useState('desc');
+    const [sortBy, setSortBy] = useState('updatedAt'); // 'name' | 'updatedAt' | 'createdAt'
+    const [sortOrder, setSortOrder] = useState('desc'); // 'asc' | 'desc'
 
     useEffect(() => { loadContents(); }, [currentFolder]);
 
+    // query user search input
     useEffect(() => {
         if (!searchQuery.trim()) {
             setSearchResults(null);
@@ -241,7 +242,7 @@ export default function Dashboard() {
         const timer = setTimeout(async () => {
             try {
                 const data = await apiFetch(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-                searchResults(data);
+                setSearchResults(data);
             } catch {
                 setSearchResults({ folders: [], boards: [] });
             } finally {
@@ -275,7 +276,8 @@ export default function Dashboard() {
                 setSharedBoards(shared);
             }
         } catch (err) {
-            setError("Failed to load contents: ", err.error);
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setError(`Failed to load contents${errorDetail ? `: ${errorDetail}` : ""}`);
         } finally {
             setLoading(false);
         }
@@ -290,7 +292,8 @@ export default function Dashboard() {
             await apiFetch(endpoint, { method: 'PUT', body: JSON.stringify(body) });
             loadContents();
         } catch (err) {
-            setError(err.error || "Failed to move item");
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setError(`Failed to move item${errorDetail ? `: ${errorDetail}` : ""}`);
         } finally {
             setDraggedItem(null);
             setDraggedOverFolder(null);
@@ -320,7 +323,8 @@ export default function Dashboard() {
             setEditingFolder(null);
             loadContents();
         } catch (err) {
-            setError(err.error || "Failed to rename folder");
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setError(`Failed to rename folder${errorDetail ? `: ${errorDetail}` : ""}`);
         }
     }
 
@@ -330,7 +334,8 @@ export default function Dashboard() {
             setEditingBoard(null);
             loadContents();
         } catch (err) {
-            setError(err.error || "Failed to rename board");
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setError(`Failed to rename board${errorDetail ? `: ${errorDetail}` : ""}`);
         }
     }
 
@@ -342,7 +347,8 @@ export default function Dashboard() {
             await apiFetch(endpoint, { method: 'DELETE' });
             loadContents();
         } catch (err) {
-            setError(err.error || `Failed to delete ${type}`);
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setError(`Failed to delete ${type}${errorDetail ? `: ${errorDetail}` : ""}`);
         } finally {
             setItemToDelete(null);
         }
