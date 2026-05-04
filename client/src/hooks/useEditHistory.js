@@ -18,10 +18,10 @@ export default function useEditHistory({
             const oldLine = linesRef.current?.find(line => line.id === id);
             const modifiedLine = {
                 ...oldLine,
-                color: newBrushColor,
-                strokeWidth: newStrokeWidth,
-                opacity: newOpacity,
-                fill: oldLine.fill ? newFillColor : undefined
+                color: newBrushColor !== null ? newBrushColor : oldLine.color,
+                strokeWidth: newStrokeWidth !== null ? newStrokeWidth : oldLine.strokeWidth,
+                opacity: newOpacity !== null ? newOpacity : oldLine.opacity,
+                fill: newFillColor !== null ? newFillColor : (oldLine.fill ? newFillColor : undefined)
             };
             if (!oldLine || !modifiedLine) return null;
             return { prev_line: oldLine, new_line: modifiedLine };

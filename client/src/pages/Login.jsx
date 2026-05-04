@@ -18,7 +18,7 @@ export default function Login() {
             await login(identifier, password);
             navigate('/dashboard');
         } catch (err) {
-            setError('Unknown email/username or incorrect password');
+            setError("Failed to login: ", err.error);
         } finally {
             setLoading(false);
         }

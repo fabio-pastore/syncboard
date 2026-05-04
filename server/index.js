@@ -224,10 +224,10 @@ app.use('/api/search', searchRoutes);
 
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
-        console.log('Connect to MongoDB');
+        console.log('Successfully connected to MongoDB database');
         const PORT = process.env.PORT || 3001;
         server.listen(PORT, () => {
-            console.log(`Server running on http://localhost:${PORT}`);
+            console.log(`Server running on port ${PORT}`);
         });
     })
     .catch((err) => {

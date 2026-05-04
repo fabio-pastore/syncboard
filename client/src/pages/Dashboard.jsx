@@ -19,6 +19,7 @@ function timeAgo(dateStr) {
 }
 
 // me when the menu is kebab
+// i <3 🌯 (this is a kebab in case emoji doesn't render)
 function KebabMenu({ items, align = 'right' }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
@@ -214,21 +215,23 @@ export default function Dashboard() {
     const [folderPath, setFolderPath] = useState([]);
     const [editingFolder, setEditingFolder] = useState(null);
     const [editingBoard, setEditingBoard] = useState(null);
+    
+    const [itemToDelete, setItemToDelete] = useState(null); 
+
     const [error, setError] = useState('');
     const [showProfile, setShowProfile] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState(null); // null = not searching
+    const [searchResults, setSearchResults] = useState(null);
     const [searchLoading, setSearchLoading] = useState(false);
     const [loading, setLoading] = useState(true);
 
     const [draggedItem, setDraggedItem] = useState(null);
     const [draggedOverFolder, setDraggedOverFolder] = useState(null);
-    const [sortBy, setSortBy] = useState('updatedAt'); // 'name' | 'updatedAt' | 'createdAt'
-    const [sortOrder, setSortOrder] = useState('desc'); // 'asc' | 'desc'
+    const [sortBy, setSortBy] = useState('updatedAt'); 
+    const [sortOrder, setSortOrder] = useState('desc');
 
     useEffect(() => { loadContents(); }, [currentFolder]);
 
-   // query to find the things
     useEffect(() => {
         if (!searchQuery.trim()) {
             setSearchResults(null);
@@ -238,7 +241,7 @@ export default function Dashboard() {
         const timer = setTimeout(async () => {
             try {
                 const data = await apiFetch(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
-                setSearchResults(data);
+                searchResults(data);
             } catch {
                 setSearchResults({ folders: [], boards: [] });
             } finally {
@@ -271,8 +274,8 @@ export default function Dashboard() {
                 setBoards(mine.filter(b => !b.folder));
                 setSharedBoards(shared);
             }
-        } catch {
-            setError("Failed to load contents");
+        } catch (err) {
+            setError("Failed to load contents: ", err.error);
         } finally {
             setLoading(false);
         }
@@ -331,14 +334,18 @@ export default function Dashboard() {
         }
     }
 
-    async function deleteFolder(id) {
-        try { await apiFetch(`/folders/${id}`, { method: 'DELETE' }); loadContents(); }
-        catch (err) { setError(err.error || "Failed to delete folder"); }
-    }
-
-    async function deleteBoard(id) {
-        try { await apiFetch(`/boards/${id}`, { method: 'DELETE' }); loadContents(); }
-        catch (err) { setError(err.error || "Failed to delete board"); }
+    async function confirmDelete() {
+        if (!itemToDelete) return;
+        const { id, type } = itemToDelete;
+        try {
+            const endpoint = type === 'folder' ? `/folders/${id}` : `/boards/${id}`;
+            await apiFetch(endpoint, { method: 'DELETE' });
+            loadContents();
+        } catch (err) {
+            setError(err.error || `Failed to delete ${type}`);
+        } finally {
+            setItemToDelete(null);
+        }
     }
 
     function sortItems(items) {
@@ -358,7 +365,6 @@ export default function Dashboard() {
         return sorted;
     }
 
-    // server results otherwise data we know locally
     const isSearching = searchQuery.trim().length > 0;
     const filteredFolders = sortItems(isSearching && searchResults
         ? searchResults.folders
@@ -377,7 +383,6 @@ export default function Dashboard() {
         : sharedBoards);
 
     const isEmpty = !(loading || searchLoading) && filteredFolders.length === 0 && filteredBoards.length === 0 && filteredShared.length === 0;
-    const totalItems = filteredFolders.length + filteredBoards.length + filteredShared.length;
 
     return (
         <div className="min-h-screen bg-gray-50/60 text-gray-700">
@@ -594,7 +599,7 @@ export default function Dashboard() {
                                                 items={[
                                                     { label: 'Rename', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => { setEditingFolder(folder._id); setEditingBoard(null); } },
                                                     { divider: true },
-                                                    { label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5 text-red-500" />, danger: true, onClick: () => deleteFolder(folder._id) },
+                                                    { label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5 text-red-500" />, danger: true, onClick: () => setItemToDelete({ type: 'folder', id: folder._id, name: folder.name }) },
                                                 ]}
                                             />
                                         </div>
@@ -603,6 +608,10 @@ export default function Dashboard() {
                             ))}
                         </div>
                     </section>
+                )}
+
+                {!loading && filteredFolders.length > 0 && (filteredBoards.length > 0 || filteredShared.length > 0) && (
+                    <div className="w-full h-px bg-gray-200/80 my-8"></div>
                 )}
 
                 {!loading && filteredBoards.length > 0 && (
@@ -694,7 +703,7 @@ export default function Dashboard() {
                                                 items={[
                                                     { label: 'Rename', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => { setEditingBoard(board._id); setEditingFolder(null); } },
                                                     { divider: true },
-                                                    { label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5 text-red-500" />, danger: true, onClick: () => deleteBoard(board._id) },
+                                                    { label: 'Delete', icon: <Trash2 className="w-3.5 h-3.5 text-red-500" />, danger: true, onClick: () => setItemToDelete({ type: 'board', id: board._id, name: board.name }) },
                                                 ]}
                                             />
                                         </div>
@@ -773,6 +782,46 @@ export default function Dashboard() {
             </main>
 
             <Profile open={showProfile} onClose={() => setShowProfile(false)} />
+
+            {itemToDelete && (
+                <div 
+                    className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 animate-[fadeIn_0.15s_ease]" 
+                    onClick={() => setItemToDelete(null)}
+                >
+                    <div 
+                        className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-[slideDown_0.15s_ease]" 
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-4 mb-4">
+                            <div className="w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
+                                <Trash2 className="w-5 h-5 text-red-500" />
+                            </div>
+                            
+                            <h3 className="text-lg font-semibold text-gray-900">
+                                Confirm {itemToDelete.type} deletion
+                            </h3>
+                        </div>
+                        
+                        <p className="text-sm text-gray-500 mb-6">
+                            Are you sure you want to delete <span className="font-semibold text-gray-800">"{itemToDelete.name}"</span>? This action cannot be undone.
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setItemToDelete(null)}
+                                className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition text-sm font-medium cursor-pointer"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white transition text-sm font-medium cursor-pointer shadow-sm"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style>{`
                 @keyframes fadeIn {

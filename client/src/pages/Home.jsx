@@ -133,7 +133,7 @@ export default function Home() {
                                         transformStyle: 'preserve-3d',
                                     }}
                                 >
-                                    <div className="absolute inset-0 rounded-2xl border-[6px] border-white z-10 pointer-events-none" />
+                                    <div className="absolute inset-0 rounded-2xl border-[4px] border-white z-10 pointer-events-none" />
                                     <img
                                         src={whiteboardImg}
                                         alt="SyncBoard whiteboard preview"

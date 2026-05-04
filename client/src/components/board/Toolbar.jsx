@@ -24,8 +24,16 @@ export default function Toolbar({
 }) {
     const [selectedColorMenu, setSelectedColorMenu] = useState(false);
     const isTouchDevice = useMemo(() => {
-        return ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    }, []);
+    if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+        return true;
+    }
+
+    // fallback for old browsers
+    const hasTouchEvents = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const hasFinePointer = window.matchMedia && window.matchMedia("(pointer: fine)").matches;
+
+    return hasTouchEvents && !hasFinePointer;
+}, []);
 
     const handleColorSelect = (c) => {
         setColor(c);
@@ -66,7 +74,6 @@ export default function Toolbar({
                 className="absolute bottom-14 left-1/2 -translate-x-1/2 bg-white px-2 py-2 border border-gray-200 rounded-2xl shadow-lg flex flex-col gap-1 md:flex-row md:items-center md:left-16 md:translate-x-0"
                 style={{ display: (tool === 'shape' && selectedShapeMenu) ? 'flex' : 'none' }}
             >
-                {/* Row 1 (mobile) / Section 1 (desktop): Shape types */}
                 <div className="flex items-center gap-1">
                     <ToolButton active={shape === "line"} onClick={() => setShape("line")} title="Line">
                         <Minus size={18} />

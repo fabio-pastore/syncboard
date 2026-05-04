@@ -54,10 +54,38 @@ export default function ShareModal({ board, setBoard, boardId, lines, onClose, o
         }
     }
 
-    function copyLink() {
-        navigator.clipboard.writeText(shareUrl);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    async function copyLink() {
+        if (!shareUrl) return;
+
+        try {
+            // this could fail if frontend is not hosted on localhost or accessed via https
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(shareUrl);
+            } else {
+                // fallback in case navigator.clipboard is undefined for security measures
+                // create a temporary invisible textarea, write the link in it and copy its contents
+                const textArea = document.createElement("textarea");
+                textArea.value = shareUrl;
+                textArea.style.position = "absolute";
+                textArea.style.left = "-999999px";
+                
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                
+                document.execCommand("copy");
+                
+                // cleanup tmp textarea
+                textArea.remove();
+            }
+
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+            
+        } catch (err) {
+            console.error("Impossibile copiare il link: ", err);
+            // Opzionale: qui potresti mostrare un toast di errore all'utente
+        }
     }
 
     function handleClose() {
