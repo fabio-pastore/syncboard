@@ -87,7 +87,7 @@ router.put('/:id', async (req, res) => {
         if (folder) {
             const f = require('../models/Folder');
             const tf = await f.findOne({_id: folder, owner: req.userId});
-            if (!tf) return res.status(405).json({ error: 'Folder not folder' });
+            if (!tf) return res.status(405).json({ error: 'Folder not found' });
         }
         const board = await Board.findOneAndUpdate(
             {_id: req.params.id, owner: req.userId},

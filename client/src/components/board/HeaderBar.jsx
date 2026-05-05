@@ -74,6 +74,7 @@ export default function HeaderBar({ board, role, shared, peers, peerEntries, use
                         className="flex items-center justify-center gap-1.5 h-[34px] px-2 sm:px-3 rounded-xl bg-white border border-gray-200 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 shadow-sm transition cursor-pointer"
                     >
                         <Share2 size={14} />
+                        {/* for very small screens hide "share" and just display the div with icon */}
                         <span className="hidden sm:inline-block">Share</span>
                     </button>
                 )}
@@ -81,14 +82,3 @@ export default function HeaderBar({ board, role, shared, peers, peerEntries, use
         </header>
     );
 }
-
-
-
-
-
-
-
-
-
-
-{/* for very small screens hide "share" and just display the div with icon */}

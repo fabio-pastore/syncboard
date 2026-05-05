@@ -39,6 +39,8 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         link.download = `${board?.name || 'board'}.png`;
         link.href = dataUrl;
         link.click();
+        stageRef.current.position(oldPos);
+        stageRef.current.scale(oldScale);
     }, [lines, board, stageRef]);
 
     const exportToPDF = useCallback(() => {
@@ -62,6 +64,8 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         const pdf = new jsPDF(orientation, 'px', [box.width, box.height]);
         pdf.addImage(dataUrl, 'PNG', 0, 0, box.width, box.height);
         pdf.save(`${board?.name || 'board'}.pdf`);
+        stageRef.current.position(oldPos);
+        stageRef.current.scale(oldScale);
     }, [lines, board, stageRef]);
 
     const generateThumbnail = useCallback((mw = 400) => {

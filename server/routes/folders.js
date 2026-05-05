@@ -83,7 +83,14 @@ async function deleteFolderRecursive(folderId, ownerId) {
   for (const sub of subfolders) {
     await deleteFolderRecursive(sub._id, ownerId);
   }
-  await Board.deleteMany({ folder: folderId, owner: ownerId }); // we can use updatemany to bring stuff to root instead
+  const boardsToDelete = await Board.find({ folder: folderId, owner: ownerId });
+  const boardIds = boardsToDelete.map(b => b._id);
+  
+  if (boardIds.length > 0) {
+      await BoardLine.deleteMany({ boardId: { $in: boardIds } });
+  }
+  
+  await Board.deleteMany({ folder: folderId, owner: ownerId });
   await Folder.deleteOne({ _id: folderId, owner: ownerId });
 }
 

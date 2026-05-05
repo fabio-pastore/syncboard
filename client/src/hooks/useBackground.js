@@ -8,7 +8,7 @@ export default function useBackground({ containerRef, socketRef, stagePositionRe
     useEffect(() => {
         const colorLuminosity = calculateLuminosity(bgColor);
         patternColorRef.current = colorLuminosity > 128 ? 'rgba(0, 0, 0, 0.125)' : 'rgba(255, 255, 255, 0.125)';
-    }, [bgColor, calculateLuminosity])
+    }, [bgColor])
 
     const updateBackgroundStyle = useCallback((pos, currentScale) => {
     if (!containerRef.current) return;

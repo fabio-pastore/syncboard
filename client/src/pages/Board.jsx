@@ -139,13 +139,15 @@ export default function Board({ shared = false }) {
     useEffect(() => { toolRef.current = tool }, [tool]);
     useEffect(() => { shapeRef.current = shape }, [shape]);
 
+    const canDraw = (role === 'editor');
+
     const { updateBackgroundStyle, handleBgPatternEdit, handleBgColorEdit } = useBackground({
         containerRef, socketRef, stagePositionRef, scale, bgPattern, setBgPattern, bgColor, setBgColor
     });
 
     const { handleUndo, handleRedo, handleCopy, handlePaste, handleModifySelection, handleDeleteSelection, copiedLinesRef } = useEditHistory({
         setEditHistory, setLines, socketRef, linesRef, selectedIdsRef, selectedIds,
-        clearSelection, stageRef, setIsOpenContextMenu, sortLinesByTime
+        clearSelection, stageRef, setIsOpenContextMenu, sortLinesByTime, canDraw
     });
 
     const { isDraggingSelectionRef, handleDragStart, handleDragMove, handleDragEnd } = useShapeDrag({
@@ -167,8 +169,6 @@ export default function Board({ shared = false }) {
     });
 
     const { exportToPng, exportToPDF, saveThumbnail } = useExport({ stageRef, linesRef, lines, board, id, shared, bgColor, bgPattern });
-
-    const canDraw = (role === 'editor');
 
     useEffect(() => {
         function onResize() { setStageSize({ width: window.innerWidth, height: window.innerHeight }); }

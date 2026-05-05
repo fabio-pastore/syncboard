@@ -28,7 +28,7 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
         let hash = 0;
         for (let i = 0; i < socketId.length; i++) {
             hash = ((hash << 5) - hash) + socketId.charCodeAt(i);
-            hash |= 0; // is this even correct syntax, what does this even mean - OR
+            hash |= 0; 
         }
         return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];
     }, []);

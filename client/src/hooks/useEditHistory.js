@@ -3,7 +3,7 @@ import { NUM_MAX_UNDO } from "../utils/boardConstants";
 import { translatePoints } from "../utils/boardUtils";
 
 export default function useEditHistory({
-    setEditHistory, setLines, socketRef, linesRef,
+    setEditHistory, setLines, socketRef, linesRef, canDraw,
     selectedIdsRef, selectedIds, clearSelection, stageRef,
     setIsOpenContextMenu, sortLinesByTime
 }) {
@@ -80,6 +80,9 @@ export default function useEditHistory({
 
     useEffect(() => {
         const onKeyDown = (e) => {
+            if (!canDraw) return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return; // avoids deleting selectons while chat is open
+
             if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
                 handleDeleteSelection();
             }
@@ -244,6 +247,7 @@ export default function useEditHistory({
 
     useEffect(() => {
         const handleShortcuts = (e) => {
+            if (!canDraw) return;
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
             const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;

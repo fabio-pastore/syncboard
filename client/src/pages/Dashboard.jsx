@@ -303,6 +303,7 @@ export default function Dashboard() {
     function openFolder(folder) {
         setFolderPath((prev) => [...prev, { id: folder._id, parentId: currentFolder, name: folder.name }]);
         setCurrentFolder(folder._id);
+        setSearchQuery(''); // reset search if the folder was opened using search tool
     }
 
     function goBack() {

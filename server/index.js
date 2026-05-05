@@ -545,18 +545,23 @@ io.on('connection', (socket) => {
         if (peers) peers.delete(socket.id);
 
         if (socket.data.isOwner) {
-            // if owner left then we kick all users that joined with a shared link
-            const room = io.sockets.adapter.rooms.get(roomId);
-            if (room) {
-                for (const sid of room) {
-                    const s = io.sockets.sockets.get(sid);
-                    if (s && s.data.isShareToken) {
-                        s.emit('board:kicked', 'Owner left the board');
-                        s.disconnect(true);
+            const remainingPeers = Array.from(peers?.values() || []);
+            const isOwnerStillPresent = remainingPeers.some(p => p.isOwner); // we must check since owner may have duplicated tab and closed original one
+
+            if (!isOwnerStillPresent) {
+                // if owner left then we kick all users that joined with a shared link
+                const room = io.sockets.adapter.rooms.get(roomId);
+                if (room) {
+                    for (const sid of room) {
+                        const s = io.sockets.sockets.get(sid);
+                        if (s && s.data.isShareToken) {
+                            s.emit('board:kicked', 'Owner left the board');
+                            s.disconnect(true);
+                        }
                     }
                 }
+                Board.updateOne({ _id: roomId }, { $set: { shareTokens: [] } }).catch(() => {});
             }
-            Board.updateOne({ _id: roomId }, { $set: { shareTokens: [] } }).catch(() => {});
         } else if (shareToken) {
             Board.updateOne({ _id: roomId }, { $pull: { shareTokens: { token: shareToken } } }).catch(() => {});
         }
