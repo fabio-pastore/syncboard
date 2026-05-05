@@ -58,6 +58,7 @@ export default function SelectionBox({
                         strokeWidth={1}
                         listening={false} 
                     />
+                    {/* resize handle hitbox */}
                     <Rect
                         id={handle.id}
                         x={handle.x - 15}
@@ -109,10 +110,11 @@ export default function SelectionBox({
                     handleRotationStart(stage.getPointerPosition(), pointerScale);
                 }}
             >
+                {/* rotation handle hitbox */}
                 <Circle
                     x={0}
                     y={0}
-                    radius={30}
+                    radius={22}
                     fill="transparent"
                 />
 

@@ -1,6 +1,6 @@
 import { useRef, useCallback } from "react";
 import { NUM_MAX_UNDO, UPDATE_INTERVAL, HANDLE_BOTTOM_RIGHT, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, HANDLE_BOTTOM_LEFT, HANDLE_TOP, HANDLE_RIGHT, HANDLE_BOTTOM, HANDLE_LEFT } from "../utils/boardConstants";
-import { rotatePoint } from "../utils/boardUtils";
+import { rotatePoint, computeCircleData } from "../utils/boardUtils";
 
 export default function useShapeResize({
     stageRef,
@@ -120,94 +120,181 @@ export default function useShapeResize({
         const scaleX = initBBox.width > 0 ? curWidth / initBBox.width : 1;
         const scaleY = initBBox.height > 0 ? curHeight / initBBox.height : 1;
 
-        const visualWidth = Math.abs(curWidth);
-        const visualHeight = Math.abs(curHeight);
+        const updated = linesRef.current.map(l => {
+            if (!selectedIdsRef.current.includes(l.id)) return l;
+            const oldL = linesBeforeResizeRef.current.find(old => old.id === l.id);
+            if (!oldL) return l;
 
-        const newLocalCx = (newLocalLeft + newLocalRight) / 2;
-        const newLocalCy = (newLocalTop + newLocalBottom) / 2;
-        const newGlobalCenter = rotatePoint(newLocalCx, newLocalCy, globalCx, globalCy, rotationDeg);
-
-        setSelectionBBox(prev => ({
-            ...prev,
-            x: newGlobalCenter.x - visualWidth / 2,
-            y: newGlobalCenter.y - visualHeight / 2,
-            width: visualWidth,
-            height: visualHeight,
-            globalCenterX: newGlobalCenter.x,
-            globalCenterY: newGlobalCenter.y
-        }));
-
-        setLines(prev => {
-            const updated = prev.map(l => {
-                if (!selectedIdsRef.current.includes(l.id)) return l;
-                const oldL = linesBeforeResizeRef.current.find(old => old.id === l.id);
-                if (!oldL) return l;
-
-                const newPoints = new Array(oldL.points.length);
+            const newPoints = new Array(oldL.points.length);
+            
+            if (oldL.type === 'circle') {
                 
-                if (oldL.type === 'circle') {
-                    
-                    const cx = oldL.points[0];
-                    const cy = oldL.points[1];
-                    const edgeX = oldL.points[2];
-                    const edgeY = oldL.points[3];
-                    const radius = Math.sqrt((edgeX - cx)**2 + (edgeY - cy)**2);
-                    
-                    const localC = rotatePoint(cx, cy, globalCx, globalCy, -rotationDeg);
-                    const scaledCx = newLocalLeft + (localC.x - localLeft) * scaleX;
-                    const scaledCy = newLocalTop + (localC.y - localTop) * scaleY;
-                    const globalC = rotatePoint(scaledCx, scaledCy, globalCx, globalCy, rotationDeg);
-                    
-                    let rScale = 1;
-                    if ([HANDLE_LEFT, HANDLE_RIGHT].includes(handle)) rScale = Math.abs(scaleX);
-                    else if ([HANDLE_TOP, HANDLE_BOTTOM].includes(handle)) rScale = Math.abs(scaleY);
-                    else rScale = Math.max(Math.abs(scaleX), Math.abs(scaleY));
-                    
-                    const newRadius = radius * rScale;
-                    
-                    newPoints[0] = globalC.x;
-                    newPoints[1] = globalC.y;
-                    newPoints[2] = globalC.x + newRadius;
-                    newPoints[3] = globalC.y;
-                } else {
+                const cx = oldL.points[0];
+                const cy = oldL.points[1];
+                const edgeX = oldL.points[2];
+                const edgeY = oldL.points[3];
+                const radius = Math.sqrt((edgeX - cx)**2 + (edgeY - cy)**2);
+                
+                const localC = rotatePoint(cx, cy, globalCx, globalCy, -rotationDeg);
+                const scaledCx = newLocalLeft + (localC.x - localLeft) * scaleX;
+                const scaledCy = newLocalTop + (localC.y - localTop) * scaleY;
+                const globalC = rotatePoint(scaledCx, scaledCy, globalCx, globalCy, rotationDeg);
+                
+                let rScale = 1;
+                if ([HANDLE_LEFT, HANDLE_RIGHT].includes(handle)) rScale = Math.abs(scaleX);
+                else if ([HANDLE_TOP, HANDLE_BOTTOM].includes(handle)) rScale = Math.abs(scaleY);
+                else rScale = Math.max(Math.abs(scaleX), Math.abs(scaleY));
+                
+                const newRadius = radius * rScale;
+                
+                newPoints[0] = globalC.x;
+                newPoints[1] = globalC.y;
+                newPoints[2] = globalC.x + newRadius;
+                newPoints[3] = globalC.y;
+            } else {
 
-                    for (let i = 0; i < oldL.points.length; i += 2) {
-                        const localP = rotatePoint(oldL.points[i], oldL.points[i+1], globalCx, globalCy, -rotationDeg);
-                        const scaledX = newLocalLeft + (localP.x - localLeft) * scaleX;
-                        const scaledY = newLocalTop + (localP.y - localTop) * scaleY;
-                        const globalP = rotatePoint(scaledX, scaledY, globalCx, globalCy, rotationDeg);
-                        
-                        newPoints[i] = globalP.x;
-                        newPoints[i+1] = globalP.y;
-                    }
+                for (let i = 0; i < oldL.points.length; i += 2) {
+                    const localP = rotatePoint(oldL.points[i], oldL.points[i+1], globalCx, globalCy, -rotationDeg);
+                    const scaledX = newLocalLeft + (localP.x - localLeft) * scaleX;
+                    const scaledY = newLocalTop + (localP.y - localTop) * scaleY;
+                    const globalP = rotatePoint(scaledX, scaledY, globalCx, globalCy, rotationDeg);
+                    
+                    newPoints[i] = globalP.x;
+                    newPoints[i+1] = globalP.y;
                 }
+            }
 
-                let newX = oldL.x, newY = oldL.y;
-                let newOffsetX = oldL.offsetX, newOffsetY = oldL.offsetY;
+            let newX = oldL.x, newY = oldL.y;
+            let newOffsetX = oldL.offsetX, newOffsetY = oldL.offsetY;
 
-                if (oldL.x !== undefined && oldL.y !== undefined) {
-                    const localCenter = rotatePoint(oldL.x, oldL.y, globalCx, globalCy, -rotationDeg);
-                    const scaledCx = newLocalLeft + (localCenter.x - localLeft) * scaleX;
-                    const scaledCy = newLocalTop + (localCenter.y - localTop) * scaleY;
-                    const globalCenterP = rotatePoint(scaledCx, scaledCy, globalCx, globalCy, rotationDeg);
-                    newX = globalCenterP.x;
-                    newY = globalCenterP.y;
-                }
+            if (oldL.x !== undefined && oldL.y !== undefined) {
+                const localCenter = rotatePoint(oldL.x, oldL.y, globalCx, globalCy, -rotationDeg);
+                const scaledCx = newLocalLeft + (localCenter.x - localLeft) * scaleX;
+                const scaledCy = newLocalTop + (localCenter.y - localTop) * scaleY;
+                const globalCenterP = rotatePoint(scaledCx, scaledCy, globalCx, globalCy, rotationDeg);
+                newX = globalCenterP.x;
+                newY = globalCenterP.y;
+            }
 
-                if (oldL.offsetX !== undefined && oldL.offsetY !== undefined) {
-                    const localOff = rotatePoint(oldL.offsetX, oldL.offsetY, globalCx, globalCy, -rotationDeg);
-                    const scaledOffX = newLocalLeft + (localOff.x - localLeft) * scaleX;
-                    const scaledOffY = newLocalTop + (localOff.y - localTop) * scaleY;
-                    const globalOffP = rotatePoint(scaledOffX, scaledOffY, globalCx, globalCy, rotationDeg);
-                    newOffsetX = globalOffP.x;
-                    newOffsetY = globalOffP.y;
-                }
+            if (oldL.offsetX !== undefined && oldL.offsetY !== undefined) {
+                const localOff = rotatePoint(oldL.offsetX, oldL.offsetY, globalCx, globalCy, -rotationDeg);
+                const scaledOffX = newLocalLeft + (localOff.x - localLeft) * scaleX;
+                const scaledOffY = newLocalTop + (localOff.y - localTop) * scaleY;
+                const globalOffP = rotatePoint(scaledOffX, scaledOffY, globalCx, globalCy, rotationDeg);
+                newOffsetX = globalOffP.x;
+                newOffsetY = globalOffP.y;
+            }
 
-                return { ...l, points: newPoints, x: newX, y: newY, offsetX: newOffsetX, offsetY: newOffsetY };
-            });
-            linesRef.current = updated;
-            return updated;
+            return { ...l, points: newPoints, x: newX, y: newY, offsetX: newOffsetX, offsetY: newOffsetY };
         });
+
+        linesRef.current = updated;
+        setLines(updated);
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+        for (const line of updated) {
+            if (!selectedIdsRef.current.includes(line.id)) continue;
+            
+            const rot = line.rotation || 0;
+            const originX = line.offsetX || 0;
+            const originY = line.offsetY || 0;
+            const shiftX = (line.x || 0) - originX;
+            const shiftY = (line.y || 0) - originY;
+
+            if (line.type === 'circle') {
+                const { x_center, y_center, radius } = computeCircleData(line.points);
+                const sw = line.strokeWidth || 0;
+                
+                const rotatedCenter = rotatePoint(x_center, y_center, originX, originY, rot);
+                const finalCX = rotatedCenter.x + shiftX;
+                const finalCY = rotatedCenter.y + shiftY;
+
+                const locCenter = rotatePoint(finalCX, finalCY, globalCx, globalCy, -rotationDeg);
+                const r = radius + sw;
+                if (locCenter.x - r < minX) minX = locCenter.x - r;
+                if (locCenter.x + r > maxX) maxX = locCenter.x + r;
+                if (locCenter.y - r < minY) minY = locCenter.y - r;
+                if (locCenter.y + r > maxY) maxY = locCenter.y + r;
+            } else {
+                const sw = line.strokeWidth || 0;
+                for (let i = 0; i < line.points.length; i += 2) {
+                    const px = line.points[i];
+                    const py = line.points[i + 1];
+                    
+                    const rotated = rotatePoint(px, py, originX, originY, rot);
+                    const finalX = rotated.x + shiftX;
+                    const finalY = rotated.y + shiftY;
+
+                    const loc = rotatePoint(finalX, finalY, globalCx, globalCy, -rotationDeg);
+                    if (loc.x - sw < minX) minX = loc.x - sw;
+                    if (loc.x + sw > maxX) maxX = loc.x + sw;
+                    if (loc.y - sw < minY) minY = loc.y - sw;
+                    if (loc.y + sw > maxY) maxY = loc.y + sw;
+                }
+            }
+        }
+
+        const padding = 10;
+        if (minX !== Infinity) {
+            minX -= padding;
+            minY -= padding;
+            maxX += padding;
+            maxY += padding;
+
+            let handleMinX = Math.min(newLocalLeft, newLocalRight);
+            let handleMaxX = Math.max(newLocalLeft, newLocalRight);
+            let handleMinY = Math.min(newLocalTop, newLocalBottom);
+            let handleMaxY = Math.max(newLocalTop, newLocalBottom);
+
+            let finalLocalLeft = minX;
+            let finalLocalRight = maxX;
+            let finalLocalTop = minY;
+            let finalLocalBottom = maxY;
+
+            if (handleMinX < finalLocalLeft) finalLocalLeft = handleMinX;
+            if (handleMaxX > finalLocalRight) finalLocalRight = handleMaxX;
+            if (handleMinY < finalLocalTop) finalLocalTop = handleMinY;
+            if (handleMaxY > finalLocalBottom) finalLocalBottom = handleMaxY;
+
+            const enforceAnchorX = (anchorX) => {
+                if (anchorX === handleMinX) finalLocalLeft = anchorX;
+                if (anchorX === handleMaxX) finalLocalRight = anchorX;
+            };
+            const enforceAnchorY = (anchorY) => {
+                if (anchorY === handleMinY) finalLocalTop = anchorY;
+                if (anchorY === handleMaxY) finalLocalBottom = anchorY;
+            };
+
+            if ([HANDLE_TOP_RIGHT, HANDLE_RIGHT, HANDLE_BOTTOM_RIGHT].includes(handle)) {
+                enforceAnchorX(newLocalLeft);
+            }
+            if ([HANDLE_TOP_LEFT, HANDLE_LEFT, HANDLE_BOTTOM_LEFT].includes(handle)) {
+                enforceAnchorX(newLocalRight);
+            }
+            if ([HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM, HANDLE_BOTTOM_RIGHT].includes(handle)) {
+                enforceAnchorY(newLocalTop);
+            }
+            if ([HANDLE_TOP_LEFT, HANDLE_TOP, HANDLE_TOP_RIGHT].includes(handle)) {
+                enforceAnchorY(newLocalBottom);
+            }
+
+            const trueVisualWidth = finalLocalRight - finalLocalLeft;
+            const trueVisualHeight = finalLocalBottom - finalLocalTop;
+            const trueLocalCx = (finalLocalLeft + finalLocalRight) / 2;
+            const trueLocalCy = (finalLocalTop + finalLocalBottom) / 2;
+            const trueGlobalCenter = rotatePoint(trueLocalCx, trueLocalCy, globalCx, globalCy, rotationDeg);
+
+            setSelectionBBox(prev => ({
+                ...prev,
+                x: trueGlobalCenter.x - trueVisualWidth / 2,
+                y: trueGlobalCenter.y - trueVisualHeight / 2,
+                width: trueVisualWidth,
+                height: trueVisualHeight,
+                globalCenterX: trueGlobalCenter.x,
+                globalCenterY: trueGlobalCenter.y
+            }));
+        }
 
         const now = Date.now();
         if (now - lastTmpResizeEmitRef.current > UPDATE_INTERVAL) {
