@@ -92,7 +92,7 @@ router.put('/:id', async (req, res) => {
         const board = await Board.findOneAndUpdate(
             {_id: req.params.id, owner: req.userId},
             { ...(name && { name }), ...(folder !== undefined && { folder })},
-            { new: true }
+            { returnDocument: 'after' }
         );
         if (!board) return res.status(404).json({ error: 'Board not found'});
         res.json(board);
@@ -214,7 +214,7 @@ router.put('/:id/thumbnail', async (req, res) => {
                     { owner : req.userId },
                     { 'sharedWith' : { $elemMatch : { user: req.userId, role: 'editor' } } }
                 ]
-            }, { thumbnail }, { new: true }
+            }, { thumbnail }, { returnDocument: 'after' }
         );
         if (!board) return res.status(404).json({ error: 'Board not found' });
         res.json({ message: 'Thumbnail saved'});;

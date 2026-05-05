@@ -21,7 +21,7 @@ export default function useEditHistory({
                 color: newBrushColor !== null ? newBrushColor : oldLine.color,
                 strokeWidth: newStrokeWidth !== null ? newStrokeWidth : oldLine.strokeWidth,
                 opacity: newOpacity !== null ? newOpacity : oldLine.opacity,
-                fill: newFillColor !== null ? newFillColor : (oldLine.fill ? newFillColor : undefined)
+                fill: newFillColor !== null ? newFillColor : (oldLine.fill ? oldLine.fill : undefined)
             };
             if (!oldLine || !modifiedLine) return null;
             return { prev_line: oldLine, new_line: modifiedLine };

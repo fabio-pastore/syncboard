@@ -11,12 +11,13 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
     const [modifiedOpacity, setModifiedOpacity] = useState(null);
     
     const [activeMenu, setActiveMenu] = useState(null); 
-    
-    const isFromSelection = useRef(false);
+    const modifyTimeoutRef = useRef(null); 
 
     const selectedCount = selectedLines?.length || 0;
+    const selectedSignature = selectedLines?.map(l => l.id).sort().join(',') || '';
 
-    useEffect(() => { // hide sub-menus if main menu is closed
+    // hide sub-menus if main menu is closed
+    useEffect(() => { 
         if (!visible) setActiveMenu(null);
     }, [visible]);
 
@@ -30,33 +31,31 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
         const widths = selectedLines.map(l => l.strokeWidth);
         const opacities = selectedLines.map(l => l.opacity ?? 1);
 
-        const commonColor = allEqual(colors) ? colors[0] : null;
-        const commonFill = allEqual(fills) ? fills[0] : null;
-        const commonWidth = allEqual(widths) ? widths[0] : null;
-        const commonOpacity = allEqual(opacities) ? opacities[0] : null;
+        setModifiedBrushColor(allEqual(colors) ? colors[0] : null);
+        setModifiedFillColor(allEqual(fills) ? fills[0] : null);
+        setModifiedStrokeWidth(allEqual(widths) ? widths[0] : null);
+        setModifiedOpacity(allEqual(opacities) ? opacities[0] : null);
 
-        isFromSelection.current = true;
-        
-        setModifiedBrushColor(commonColor);
-        setModifiedFillColor(commonFill);
-        setModifiedStrokeWidth(commonWidth);
-        setModifiedOpacity(commonOpacity);
+    }, [selectedSignature]); 
 
-    }, [selectedLines]); 
+    const handleUserChange = (field, value) => {
+        if (field === 'brush') setModifiedBrushColor(value);
+        if (field === 'fill') setModifiedFillColor(value);
+        if (field === 'width') setModifiedStrokeWidth(value);
+        if (field === 'opacity') setModifiedOpacity(value);
 
-    useEffect(() => {
-        if (isFromSelection.current) {
-            isFromSelection.current = false;
-            return;
-        }
+        const newBrush = field === 'brush' ? value : modifiedBrushColor;
+        const newFill = field === 'fill' ? value : modifiedFillColor;
+        const newWidth = field === 'width' ? value : modifiedStrokeWidth;
+        const newOpacity = field === 'opacity' ? value : modifiedOpacity;
+
+        if (modifyTimeoutRef.current) clearTimeout(modifyTimeoutRef.current);
         
-         // timeout is necessary unless you wish to update the board component ~60 times per second (don't remove this)
-        const timeoutId = setTimeout(() => {
-            onModify(modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity);
-        }, INPUT_UPDATE_INTERVAL); 
-        
-        return () => clearTimeout(timeoutId);
-    }, [modifiedBrushColor, modifiedFillColor, modifiedStrokeWidth, modifiedOpacity]);
+        // timeout is necessary unless you wish to update the board component ~60 times per second (don't remove this)
+        modifyTimeoutRef.current = setTimeout(() => {
+            onModify(newBrush, newFill, newWidth, newOpacity);
+        }, INPUT_UPDATE_INTERVAL);
+    };
 
     return (
         <div 
@@ -71,19 +70,11 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
                 pointerEvents: visible ? 'auto' : 'none'
             }}
         >
-            <button
-                onClick={onCopy}
-                title="Copy"
-                className='p-2 rounded-xl transition cursor-pointer hover:bg-gray-100 text-gray-600 hover:text-gray-900'
-            >
+            <button onClick={onCopy} title="Copy" className='p-2 rounded-xl transition cursor-pointer hover:bg-gray-100 text-gray-600 hover:text-gray-900'>
                 <Copy size={16} />
             </button>
 
-            <button
-                onClick={onDelete}
-                title="Delete"
-                className='p-2 rounded-xl transition cursor-pointer hover:bg-red-50 text-red-500 hover:text-red-700'
-            >
+            <button onClick={onDelete} title="Delete" className='p-2 rounded-xl transition cursor-pointer hover:bg-red-50 text-red-500 hover:text-red-700'>
                 <Trash2 size={16} />
             </button>
 
@@ -93,14 +84,14 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
                 title="Brush color"
                 className="w-4 h-4 m-2"
                 value={modifiedBrushColor || "#000000"} 
-                onChange={setModifiedBrushColor}
+                onChange={(val) => handleUserChange('brush', val)}
             />
 
             <LocalColorPicker 
                 title="Fill color"
                 className="w-4 h-4 m-2"
                 value={modifiedFillColor || "#ffffff"} 
-                onChange={setModifiedFillColor}
+                onChange={(val) => handleUserChange('fill', val)}
             />
 
             <div className="relative flex items-center">
@@ -122,7 +113,7 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
                                 max="50" 
                                 step="1"
                                 value={modifiedStrokeWidth ?? 3} 
-                                onChange={(e) => setModifiedStrokeWidth(Number(e.target.value))} 
+                                onChange={(e) => handleUserChange('width', Number(e.target.value))} 
                                 className="flex-1 accent-gray-600 cursor-pointer min-w-0" 
                             />
                             <span className="text-xs text-gray-500 w-5 text-right relative bottom-0.5 right-1.5">
@@ -152,7 +143,7 @@ export default function SelectionContextMenu({ visible, position, selectedLines,
                                 max="1" 
                                 step="0.1"
                                 value={modifiedOpacity ?? 1} 
-                                onChange={(e) => setModifiedOpacity(Number(e.target.value))} 
+                                onChange={(e) => handleUserChange('opacity', Number(e.target.value))} 
                                 className="flex-1 accent-gray-600 cursor-pointer min-w-0" 
                             />
                             <span className="text-xs text-gray-500 w-8 text-right relative bottom-0.5 right-2">

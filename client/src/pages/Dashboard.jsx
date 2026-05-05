@@ -600,7 +600,7 @@ export default function Dashboard() {
                                     </div>
 
                                     {editingFolder !== folder._id && (
-                                        <div className="absolute top-1.5 right-1.5 hidden group-hover:block">
+                                        <div className="absolute top-1.5 right-1.5 block">
                                             <KebabMenu
                                                 items={[
                                                     { label: 'Rename', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => { setEditingFolder(folder._id); setEditingBoard(null); } },
@@ -704,7 +704,7 @@ export default function Dashboard() {
                                     )}
 
                                     {editingBoard !== board._id && (
-                                        <div className="absolute top-2 right-2 hidden group-hover:block">
+                                        <div className="absolute top-2 right-2 block">
                                             <KebabMenu
                                                 items={[
                                                     { label: 'Rename', icon: <Pencil className="w-3.5 h-3.5" />, onClick: () => { setEditingBoard(board._id); setEditingFolder(null); } },

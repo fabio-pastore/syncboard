@@ -68,7 +68,7 @@ router.put('/:id', async (req, res) => {
     const folder = await Folder.findOneAndUpdate(
       { _id: req.params.id, owner: req.userId },
       { ...(name && { name }), ...(parent !== undefined && { parent }) },
-      { new: true }
+      { returnDocument: 'after' }
     );
     if (!folder) return res.status(404).json({ error: 'Folder not found' });
       res.json(folder);
