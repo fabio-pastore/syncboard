@@ -1,7 +1,7 @@
-# SyncBoard
+# SyncBoard - Your ideas, in sync
 
 <p align="center">
-  <img alt="syncboard-logo" src="client/src/assets/favicon.png" width="200" height="200">
+  <img alt="syncboard-logo" src="https://github.com/user-attachments/assets/1512dc5c-41df-4aec-91c9-1fc365c908a9" width="200" height="200">
 </p>
 
 ## Project overview
