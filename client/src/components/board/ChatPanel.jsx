@@ -24,8 +24,8 @@ export default function ChatPanel({ chatOpen, setChatOpen, chatMessages, setChat
 
     return (
         <>
-            {/* Chat toggle button */}
-            <div className="fixed bottom-2 right-2 flex items-center gap-2 pointer-events-auto z-10">
+            {/* chat toggle button */}
+            <div className="fixed bottom-20 md:bottom-2 right-2 flex items-center gap-2 pointer-events-auto z-10 transition-all duration-300">
                 <button
                     onClick={() => { setChatOpen((prev) => !prev); setIsOpenContextMenu(false); setUnreadMessages(0); }}
                     className="py-2 px-3 rounded-xl bg-white border border-gray-200 text-gray-600 shadow-sm transition cursor-pointer hover:bg-gray-50 hover:text-gray-900"
@@ -40,10 +40,11 @@ export default function ChatPanel({ chatOpen, setChatOpen, chatMessages, setChat
                 </button>
             </div>
 
-            {/* Chat panel */}
+            {/* chat panel */}
             <div
                 className={`
-                    fixed bottom-2 right-2 z-20 flex flex-col w-80 md:w-96 h-[84vh]
+                    fixed bottom-20 md:bottom-2 right-2 z-20 flex flex-col w-80 md:w-96 
+                    h-[70vh] md:h-[74vh] 2xl:h-[84vh] 
                     bg-white border border-gray-200 rounded-2xl shadow-xl overflow-hidden font-sans
                     transition-all duration-300 ease-in-out origin-bottom-right 
                     ${chatOpen ? 'opacity-100 scale-100 translate-y-0 pointer-events-auto' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'}                                                                                                               

@@ -29,6 +29,7 @@ export default function DrawingLines({
                                     y={y_center}
                                     radius={Math.max(0, radius - sw / 2)}
                                     fill={line.fill}
+                                    opacity={line.opacity}
                                     globalCompositeOperation={line.globalCompositeOperation}
                                     listening={true}
                                 />
@@ -40,6 +41,7 @@ export default function DrawingLines({
                                 radius={radius}
                                 stroke={line.color}
                                 strokeWidth={sw}
+                                opacity={line.opacity}
                                 globalCompositeOperation={line.globalCompositeOperation}
                                 listening={true}
                             />
@@ -72,7 +74,7 @@ export default function DrawingLines({
                 );
             })}
 
-            {/* Selected lines */}
+            {/* selected lines */}
             {lines.filter(line => selectedIds.includes(line.id)).map((line) => {
                 if (line.type === 'circle') {
                     const { x_center, y_center, radius } = computeCircleData(line.points);
@@ -103,6 +105,7 @@ export default function DrawingLines({
                                     y={y_center}
                                     radius={Math.max(0, radius - sw / 2)}
                                     fill={line.fill}
+                                    opacity={line.opacity}
                                     globalCompositeOperation={line.globalCompositeOperation}
                                     listening={true}
                                 />
@@ -114,6 +117,7 @@ export default function DrawingLines({
                                 radius={radius}
                                 stroke={line.color}
                                 strokeWidth={sw}
+                                opacity={line.opacity}
                                 globalCompositeOperation={line.globalCompositeOperation}
                                 listening={true}
                             />

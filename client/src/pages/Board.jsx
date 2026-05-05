@@ -762,11 +762,6 @@ export default function Board({ shared = false }) {
             onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
         >
 
-            <div className="text-xl font-semibold fixed top-1 right-[50vw] translate-x-1/2 z-[1] pointer-events-none">
-                <span className="text-violet-700/45">Sync</span>
-                <span className="text-black/45">Board</span>
-            </div>
-
             <Stage
                 ref={stageRef}
                 width={stageSize.width}
@@ -907,6 +902,7 @@ export default function Board({ shared = false }) {
                 currentBgColor={bgColor}
                 onBgColorChange={handleBgColorEdit}
             />
+            
         </div>
     );
 }
