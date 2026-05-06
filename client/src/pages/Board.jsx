@@ -168,7 +168,7 @@ export default function Board({ shared = false }) {
 
     const { touchCountRef } = useTouchHandlers({
         stageRef, setScale, scaleRef, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
-        activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef, isResizingRef,
+        activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef, isResizingRef, isLoading,
         touchDrawModeRef, stagePositionRef, updateBackgroundStyle, displayZoomMeter
     });
 

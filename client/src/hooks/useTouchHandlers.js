@@ -16,6 +16,7 @@ export default function useTouchHandlers({
     stagePositionRef,
     updateBackgroundStyle,
     displayZoomMeter,
+    isLoading
 }) {
     const touchCountRef = useRef(0);
     const lastTouchCenterRef = useRef(null);
@@ -25,6 +26,7 @@ export default function useTouchHandlers({
     useEffect(()=> {updateBgRef.current = updateBackgroundStyle;}, [updateBackgroundStyle]);
 
     useEffect(() => {
+        if (isLoading) return;
         const container = stageRef.current?.container();
         if (!container) return;
 
@@ -139,7 +141,7 @@ export default function useTouchHandlers({
             container.removeEventListener('touchend', handleTouchEnd);
             container.removeEventListener('touchcancel', handleTouchEnd);
         };
-    }, []);
+    }, [isLoading]);
 
     return { touchCountRef };
 }
