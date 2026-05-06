@@ -301,6 +301,7 @@ export default function Dashboard() {
         const targetId = tfid === 'home' ? null : tfid;
         if (!draggedItem) return;
         if (draggedItem.type === 'folder' && draggedItem.id === targetId) return;
+        if (currentFolder === targetId) return; // prevent unnecessary API call if we're already in the folder
         try {
             const endpoint = draggedItem.type === 'board' ? `/boards/${draggedItem.id}` : `/folders/${draggedItem.id}`;
             const body = draggedItem.type === 'board' ? { folder: targetId } : { parent: targetId };

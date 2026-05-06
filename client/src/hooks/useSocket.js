@@ -237,7 +237,8 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 else if (op === 'paste') {
                     if (!line) return;
                     const lines = line;
-                    setLines((prev) => prev.filter(l => !lines.find(line => line.id === l.id)));
+                    const pastedIds = new Set(lines.map(l => l.id));
+                    setLines((prev) => prev.filter(l => !pastedIds.has(l.id)));
                     lines.forEach(l => onShapeUpdate(l.id));
                 }
                 
@@ -276,7 +277,8 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 else if (op === 'group_erase') {
                     if (!line) return;
                     const lines = line;
-                    setLines((prev) => prev.filter((l) => !lines.some(line => line.id === l.id)))
+                    const erasedIds = new Set(lines.map(l => l.id));
+                    setLines((prev) => prev.filter((l) => !erasedIds.has(l.id)));
                 }
 
                 else if (op === 'paste') {
