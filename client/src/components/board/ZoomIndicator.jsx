@@ -4,7 +4,7 @@ export default function ZoomIndicator({ scale, hasZoomed }) {
     return (
         <div 
             className={`
-                fixed bottom-2 left-2 flex items-center gap-2 pointer-events-none z-10 transition-opacity duration-300 ease-in-out
+                fixed bottom-20 md:bottom-2 left-2 flex items-center gap-2 pointer-events-none z-10 transition-opacity duration-300 ease-in-out
                 py-1.5 px-2 rounded-xl bg-white border border-gray-200 text-gray-800 shadow-sm text-sm
                 ${hasZoomed ? 'opacity-100 ' : 'opacity-0'} 
             `}

@@ -5,6 +5,10 @@ import { useNavigate } from 'react-router-dom';
 import folderIcon from '../assets/icons/folder.png';
 import { Folder, Pencil, Trash2, ArrowUp, ArrowDown } from 'lucide-react';
 import Profile from './Profile';
+// we need the following imports to implement drag-n-drop support on mobile too since it natively is not
+import { polyfill } from "mobile-drag-drop";
+import { scrollBehaviourDragImageTranslateOverride } from "mobile-drag-drop/scroll-behaviour"; 
+import "mobile-drag-drop/default.css";
 
 function timeAgo(dateStr) {
     const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
@@ -230,6 +234,16 @@ export default function Dashboard() {
     const [sortBy, setSortBy] = useState('updatedAt'); // 'name' | 'updatedAt' | 'createdAt'
     const [sortOrder, setSortOrder] = useState('desc'); // 'asc' | 'desc'
 
+    useEffect(() => {
+        polyfill({
+            dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
+            forceApplyEffectAllowed: true
+        });
+        const onTouchMove = () => {};
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        return () => window.removeEventListener('touchmove', onTouchMove);
+    }, []);
+
     useEffect(() => { loadContents(); }, [currentFolder]);
 
     // query user search input
@@ -284,11 +298,12 @@ export default function Dashboard() {
     }
 
     async function moveItem(tfid) {
+        const targetId = tfid === 'home' ? null : tfid;
         if (!draggedItem) return;
-        if (draggedItem.type === 'folder' && draggedItem.id === tfid) return;
+        if (draggedItem.type === 'folder' && draggedItem.id === targetId) return;
         try {
             const endpoint = draggedItem.type === 'board' ? `/boards/${draggedItem.id}` : `/folders/${draggedItem.id}`;
-            const body = draggedItem.type === 'board' ? { folder: tfid } : { parent: tfid };
+            const body = draggedItem.type === 'board' ? { folder: targetId } : { parent: targetId };
             await apiFetch(endpoint, { method: 'PUT', body: JSON.stringify(body) });
             loadContents();
         } catch (err) {
@@ -501,11 +516,14 @@ export default function Dashboard() {
                         <button
                             onClick={goHome}
                             className={`flex items-center gap-1 px-2 py-1 rounded-lg transition cursor-pointer font-medium ${
-                                !currentFolder ? 'text-violet-700 bg-violet-50' : 'text-gray-500 hover:text-violet-600 hover:bg-gray-100'
+                                draggedOverFolder === 'home'
+                                    ? 'bg-violet-100 text-violet-700 ring-2 ring-violet-300'
+                                    : !currentFolder ? 'text-violet-700 bg-violet-50' : 'text-gray-500 hover:text-violet-600 hover:bg-gray-100'
                             }`}
-                            onDragOver={(e) => { e.preventDefault(); setDraggedOverFolder(null); }}
+                            onDragEnter={(e) => e.preventDefault()}
+                            onDragOver={(e) => { e.preventDefault(); setDraggedOverFolder('home'); }}
                             onDragLeave={() => setDraggedOverFolder(null)}
-                            onDrop={(e) => { e.preventDefault(); moveItem(null); }}
+                            onDrop={(e) => { e.preventDefault(); moveItem('home'); }}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                 <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
@@ -514,14 +532,19 @@ export default function Dashboard() {
                         </button>
                         {folderPath.map((f, i) => (
                             <span key={i} className="flex items-center gap-1"
+                                onDragEnter={(e) => e.preventDefault()}
                                 onDragOver={(e) => { e.preventDefault(); setDraggedOverFolder(f.id); }}
                                 onDragLeave={() => setDraggedOverFolder(null)}
                                 onDrop={(e) => { e.preventDefault(); moveItem(f.id); }}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-300 shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-300 shrink-0 pointer-events-none">
                                     <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
                                 </svg>
-                                <span className="text-gray-600 truncate max-w-[140px]">{f.name}</span>
+                                <span className={`px-1.5 py-0.5 rounded-md transition-all truncate max-w-[140px] ${
+                                    draggedOverFolder === f.id ? 'bg-violet-100 ring-2 ring-violet-300 text-violet-700' : 'text-gray-600'
+                                }`}>
+                                    {f.name}
+                                </span>
                             </span>
                         ))}
                         {currentFolder && (
@@ -569,8 +592,10 @@ export default function Dashboard() {
                                         }
                                     `}
                                     draggable
+                                    onContextMenu={(e) => e.preventDefault()}
                                     onDragStart={() => setDraggedItem({ type: 'folder', id: folder._id })}
                                     onDragEnd={() => { setDraggedItem(null); setDraggedOverFolder(null); }}
+                                    onDragEnter={(e) => e.preventDefault()}
                                     onDragOver={(e) => { e.preventDefault(); setDraggedOverFolder(folder._id); }}
                                     onDragLeave={() => setDraggedOverFolder(null)}
                                     onDrop={(e) => { e.preventDefault(); moveItem(folder._id); }}
@@ -669,6 +694,7 @@ export default function Dashboard() {
                                     className="group relative bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-violet-300 hover:shadow-md transition-all cursor-pointer"
                                     onClick={() => navigate(`/board/${board._id}`)}
                                     draggable
+                                    onContextMenu={(e) => e.preventDefault()}
                                     onDragStart={(e) => { e.stopPropagation(); setDraggedItem({ type: 'board', id: board._id }); }}
                                     onDragEnd={() => { setDraggedItem(null); setDraggedOverFolder(null); }}
                                 >

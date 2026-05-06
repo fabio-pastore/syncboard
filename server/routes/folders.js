@@ -1,6 +1,7 @@
 const express = require('express');
 const Folder = require('../models/Folder');
 const Board = require('../models/Board');
+const BoardLine = require('../models/BoardLine');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
@@ -103,6 +104,7 @@ router.delete('/:id', async (req, res) => {
     await deleteFolderRecursive(req.params.id, req.userId); // deletes subfolders + their boards + this folder
     res.json({ message: 'Folder deleted' });
   } catch (err) {
+    console.error('DELETE /folders/:id error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });

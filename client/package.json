@@ -13,6 +13,7 @@
     "jspdf": "^4.2.1",
     "konva": "^10.2.3",
     "lucide-react": "^1.7.0",
+    "mobile-drag-drop": "^3.0.0-rc.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-konva": "^19.2.3",

@@ -15,6 +15,7 @@ export default function useTouchHandlers({
     touchDrawModeRef,
     stagePositionRef,
     updateBackgroundStyle,
+    displayZoomMeter,
 }) {
     const touchCountRef = useRef(0);
     const lastTouchCenterRef = useRef(null);
@@ -93,9 +94,14 @@ export default function useTouchHandlers({
                 const newScale = lastPinchDistRef.current
                     ? Math.max(0.1, Math.min(10, oldScale * (dist / lastPinchDistRef.current)))
                     : oldScale;
-                stage.scale({ x: newScale, y: newScale });
-                setScale(newScale);
-                scaleRef.current = newScale;
+                
+                if (newScale !== oldScale) {
+                    stage.scale({ x: newScale, y: newScale });
+                    setScale(newScale);
+                    scaleRef.current = newScale;
+                    displayZoomMeter();
+                }
+
                 const newPos = {
                     x: center.x - pointTo.x * newScale,
                     y: center.y - pointTo.y * newScale,

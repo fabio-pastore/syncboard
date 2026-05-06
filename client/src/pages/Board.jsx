@@ -89,6 +89,7 @@ export default function Board({ shared = false }) {
     const lastEmittedPointCountRef = useRef(0);
 
     const containerRef = useRef(null);
+    const zoomTimeoutRef = useRef(null);
 
     useEffect(() => {scaleRef.current = scale}, [scale]);
     useEffect(() => { selectedIdsRef.current = selectedIds }, [selectedIds]);
@@ -156,20 +157,21 @@ export default function Board({ shared = false }) {
         stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsManipulating
     });
 
-    const { touchCountRef } = useTouchHandlers({
-        stageRef, setScale, scaleRef, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
-        activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef, isResizingRef,
-        touchDrawModeRef, stagePositionRef, updateBackgroundStyle
-    });
-
-    const { exportToPng, exportToPDF, saveThumbnail } = useExport({ stageRef, linesRef, lines, board, id, shared, bgColor, bgPattern });
-
     const displayZoomMeter = useCallback(() => {
         setHasZoomed(true);
-        setTimeout(() => {
+        if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
+        zoomTimeoutRef.current = setTimeout(() => {
             setHasZoomed(false);
         }, ZOOM_DISPLAY_TIME);
     }, []);
+
+    const { touchCountRef } = useTouchHandlers({
+        stageRef, setScale, scaleRef, isDrawingRef, activeLineRef, activeLineDataRef, isRotatingRef,
+        activeCircleStrokeRef, activeCircleFillRef, isPenActiveRef, isResizingRef,
+        touchDrawModeRef, stagePositionRef, updateBackgroundStyle, displayZoomMeter
+    });
+
+    const { exportToPng, exportToPDF, saveThumbnail } = useExport({ stageRef, linesRef, lines, board, id, shared, bgColor, bgPattern });
 
     const {
         handlePointerDown, handlePointerMove, handlePointerUp,

@@ -44,6 +44,7 @@ export default function DrawingLines({
                                 opacity={line.opacity}
                                 globalCompositeOperation={line.globalCompositeOperation}
                                 listening={true}
+                                fillEnabled={false}
                             />
                         </Group>
                     );
@@ -55,6 +56,7 @@ export default function DrawingLines({
                         points={line.points}
                         stroke={line.color}
                         fill={line.fill}
+                        fillEnabled={!!line.fill}
                         strokeWidth={line.strokeWidth}
                         opacity={line.opacity}
                         hitStrokeWidth={line.hitStrokeWidth}
@@ -120,6 +122,7 @@ export default function DrawingLines({
                                 opacity={line.opacity}
                                 globalCompositeOperation={line.globalCompositeOperation}
                                 listening={true}
+                                fillEnabled={false}
                             />
                         </Group>
                     );
@@ -150,6 +153,7 @@ export default function DrawingLines({
                             points={line.points}
                             stroke={line.color}
                             fill={line.fill}
+                            fillEnabled={!!line.fill}
                             strokeWidth={line.strokeWidth}
                             opacity={line.opacity}
                             hitStrokeWidth={line.hitStrokeWidth}
