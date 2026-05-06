@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
@@ -6,10 +7,23 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
+import LoadingScreen from './components/LoadingScreen';
 
 export default function App() {
-  const { user, loading } = useAuth();
-  if (loading) return null; // or a loading spinner, but this is simpler
+  const SIMULATED_LOAD_TIME = 1100; // ms
+  const { user, loading: authLoading } = useAuth();
+  const location = useLocation();
+  const [isNavigating, setIsNavigating] = useState(false);
+
+  useEffect(() => {
+    setIsNavigating(true);
+    const timer = setTimeout(() => {
+      setIsNavigating(false);
+    }, SIMULATED_LOAD_TIME);
+    return () => clearTimeout(timer);
+  }, [location.pathname]);
+
+  if (authLoading || isNavigating) return <LoadingScreen />;
 
   return (
     <Routes>
