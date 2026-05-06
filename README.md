@@ -61,4 +61,4 @@ The project is built on the **MERN** stack (MongoDB, Express, React, Node.js), c
 * **JWT (JSON Web Tokens) & Bcrypt** (Stateless authentication and security)
 
 ## Contributors
-Project developed by _Fabio Pastore_ and _Alessandro Zannone_ for the course "Tecnologie e sistemi web" @ **Sapienza University of Rome** during my 3rd year of studies in Computer Engineering (BSc).
+Project developed by me (_Fabio Pastore_) and _Alessandro Zannone_ for the course "Tecnologie e sistemi web" @ **Sapienza University of Rome**, during my 3rd year of studies in Computer Engineering (BSc).

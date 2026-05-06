@@ -9,6 +9,11 @@ export default function LocalColorPicker({ value, onChange, title, className = "
     const [localColor, setLocalColor] = useState(value);
     const lastPushedValue = useRef(value);
 
+    const unmountHelperRef = useRef({ localColor, value, onChange });
+    useEffect(() => {
+        unmountHelperRef.current = { localColor, value, onChange };
+    }, [localColor, value, onChange]);
+
     useEffect(() => {
         if (value !== lastPushedValue.current) {
             setLocalColor(value);
@@ -23,6 +28,16 @@ export default function LocalColorPicker({ value, onChange, title, className = "
         return () => clearTimeout(timeoutId);
     }, [localColor, value, onChange]);
 
+    // apply color if color picker is suddenly unmounted, otherwise bg color won't change on tablets
+    useEffect(() => {
+        return () => {
+            const { localColor: finalColor, value: finalValue, onChange: finalOnChange } = unmountHelperRef.current;
+            if (finalColor !== finalValue) {
+                finalOnChange(finalColor);
+            }
+        };
+    }, []);
+
     return (
         <label className={`relative cursor-pointer flex items-center transition hover:scale-110 ${className}`} title={title}>
             <div className="w-full h-full rounded-full border-2"
@@ -34,7 +49,7 @@ export default function LocalColorPicker({ value, onChange, title, className = "
             <input 
                 type="color" 
                 value={localColor} 
-                onChange={(e) => setLocalColor(e.target.value)} 
+                onChange={(e) => setLocalColor(e.target.value)}
                 className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" 
             />
         </label>

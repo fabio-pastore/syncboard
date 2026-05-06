@@ -98,6 +98,7 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
                     strokeWidth: 1,
                 });
                 layer.add(line);
+                line.moveToBottom();
                 tempElements.push(line);
             }
             for (let y = cropY; y <= cropY + captureH; y += gridSize) {
@@ -107,6 +108,7 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
                     strokeWidth: 1,
                 });
                 layer.add(line);
+                line.moveToBottom();
                 tempElements.push(line);
             }
         } else if (bgPattern === 'lines') {
@@ -118,6 +120,7 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
                     strokeWidth: 1,
                 });
                 layer.add(line);
+                line.moveToBottom();
                 tempElements.push(line);
             }
         }
