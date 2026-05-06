@@ -7,6 +7,7 @@ import { decodeCursorBatch } from "../utils/boardUtils";
 
 export default function useSocket({ id, token, shared, onShapeUpdate, reorderLines }) {
     const [board, setBoard] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
     const [lines, setLines] = useState([]);
     const [peers, setPeers] = useState(0);
     const [bgPattern, setBgPattern] = useState('none');
@@ -82,6 +83,7 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
                 if (bgT) setBgPattern(bgT);
                 if (bgCol) setBgColor(bgCol);
                 if (r) setRole(r);
+                setIsLoading(false);
             });
 
             sock.on('board:peers', ({count: c, connectedPeers: peers}) => {
@@ -382,6 +384,6 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
         board, setBoard, lines, setLines, peers, peerEntries, role, setRole, 
         error, setError, socketRef, chatMessages, setChatMessages, chatOpen, setChatOpen,
         chatOpenRef, unreadMessages, setUnreadMessages, cursors, bgColor, setBgColor, bgPattern,
-        setBgPattern
+        setBgPattern, isLoading
     };
 }

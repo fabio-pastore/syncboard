@@ -3,11 +3,13 @@ export default function LoadingScreen() {
         <div className="fixed inset-0 flex flex-col items-center justify-center bg-white z-[9999] overflow-hidden">
             <style>
                 {`
-                .stroke-violet {
-                    -webkit-text-stroke: 1px #8b5cf6; /*i.e. violet-500 */
+                @media (max-width: 768px) {
+                    .stroke-violet { text-shadow: -0.5px -0.5px 0 #8b5cf6, 0.5px -0.5px 0 #8b5cf6, -0.5px 0.5px 0 #8b5cf6, 0.5px 0.5px 0 #8b5cf6; }
+                    .stroke-gray { text-shadow: -0.5px -0.5px 0 #1f2937, 0.5px -0.5px 0 #1f2937, -0.5px 0.5px 0 #1f2937, 0.5px 0.5px 0 #1f2937; }
                 }
-                .stroke-gray {
-                    -webkit-text-stroke: 1px #1f2937; /*i.e. gray-800 */
+                @media (min-width: 769px) {
+                    .stroke-violet { text-shadow: -0.75px -0.75px 0 #8b5cf6, 0.75px -0.75px 0 #8b5cf6, -0.75px 0.75px 0 #8b5cf6, 0.75px 0.75px 0 #8b5cf6; }
+                    .stroke-gray { text-shadow: -0.75px -0.75px 0 #1f2937, 0.75px -0.75px 0 #1f2937, -0.75px 0.75px 0 #1f2937, 0.75px 0.75px 0 #1f2937; }
                 }
                 .text-fill-anim {
                     animation: fillText 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
@@ -28,9 +30,9 @@ export default function LoadingScreen() {
                 .shape-3 { animation-name: shapeCycle3; }
 
                 @keyframes shapeCycle1 {
-                    0% { opacity: 0; transform: scale(0.5) rotate(-45deg); }
-                    10%, 23% { opacity: 0.6; transform: scale(1) rotate(45deg); }
-                    33.33%, 100% { opacity: 0; transform: scale(1.5) rotate(135deg); }
+                    0% { opacity: 0; transform: scale(0.5) rotate(90deg); }
+                    10%, 23% { opacity: 0.6; transform: scale(1) rotate(180deg); }
+                    33.33%, 100% { opacity: 0; transform: scale(1.5) rotate(270deg); }
                 }
                 @keyframes shapeCycle2 {
                     0%, 33.33% { opacity: 0; transform: scale(0.5) rotate(-45deg); }
@@ -60,17 +62,17 @@ export default function LoadingScreen() {
             {/* bg shapes */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none -z-10">
                 {/* triangle */}
-                <svg className="absolute shape-anim shape-1 w-[100vw] max-w-[1000px] h-[100vw] max-h-[1000px] text-violet-400" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round">
+                <svg className="absolute shape-anim shape-1 w-[130vw] h-[130vw] md:w-[70vw] md:h-[70vw] lg:w-[50vw] lg:h-[50vw] 2xl:w-[40vw] 2xl:h-[40vw] max-w-[1000px] max-h-[1000px] text-violet-400" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round">
                     <polygon points="50,10 85,70 15,70" />
                 </svg>
 
                 {/* square */}
-                <svg className="absolute shape-anim shape-2 w-[75vw] max-w-[650px] h-[75vw] max-h-[650px] text-violet-500" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
+                <svg className="absolute shape-anim shape-2 w-[90vw] h-[90vw] md:w-[50vw] md:h-[50vw] lg:w-[35vw] lg:h-[35vw] 2xl:w-[25vw] 2xl:h-[25vw] max-w-[650px] max-h-[650px] text-violet-500" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">
                     <rect x="15" y="15" width="70" height="70" />
                 </svg>
 
                 {/* circle */}
-                <svg className="absolute shape-anim shape-3 w-[85vw] max-w-[750px] h-[85vw] max-h-[750px] text-violet-500" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
+                <svg className="absolute shape-anim shape-3 w-[110vw] h-[110vw] md:w-[60vw] md:h-[60vw] lg:w-[45vw] lg:h-[45vw] 2xl:w-[35vw] 2xl:h-[35vw] max-w-[750px] max-h-[750px] text-violet-500" viewBox="0 0 100 100" fill="none" stroke="currentColor" strokeWidth="1">
                     <circle cx="50" cy="50" r="35" />
                 </svg>
             </div>

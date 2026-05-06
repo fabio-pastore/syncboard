@@ -23,6 +23,7 @@ import DrawingLines from "../components/board/DrawingLines";
 import CursorOverlay from "../components/board/CursorOverlay";
 import SelectionContextMenu from "../components/board/SelectionContextMenu";
 import StageContextMenu from "../components/board/StageContextMenu";
+import LoadingScreen from "../components/LoadingScreen";
 
 import { WAIT_BEFORE_EXIT, ZOOM_DISPLAY_TIME } from "../utils/boardConstants";
 
@@ -128,7 +129,7 @@ export default function Board({ shared = false }) {
     const { board, setBoard, lines, setLines, peers, peerEntries, setPeerEntries,
             role, error, setError, socketRef, chatOpenRef, chatOpen, setChatOpen, chatMessages,
             setChatMessages, unreadMessages, setUnreadMessages, cursors, bgColor, setBgColor,
-            bgPattern, setBgPattern } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
+            bgPattern, setBgPattern, isLoading } = useSocket({ id, token, shared, onShapeUpdate: handleOtherClientEdit, reorderLines });
 
     useEffect(() => { linesRef.current = lines }, [lines]);
     useEffect(() => { toolRef.current = tool }, [tool]);
@@ -266,6 +267,8 @@ export default function Board({ shared = false }) {
 
         setIsOpenContextMenu(true);
     }
+
+    if (isLoading) return <LoadingScreen />;
 
     return (
         <div
