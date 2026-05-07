@@ -283,7 +283,20 @@ io.on('connection', (socket) => {
 
             // keeping track in memory
             if (!peerMap.has(roomId)) peerMap.set(roomId, new Map());
-            peerMap.get(roomId).set(socket.id, {
+            const roomPeers = peerMap.get(roomId);
+
+            if (userId) {
+                for (const [sid, peer] of roomPeers) {
+                    if (peer.userId && peer.userId.toString() === userId.toString()) {
+                        roomPeers.delete(sid);
+                        const staleCursors = cursorState.get(roomId);
+                        if (staleCursors) staleCursors.delete(sid);
+                        break;
+                    }
+                }
+            }
+
+            roomPeers.set(socket.id, {
                 username: joinedUser.username,
                 profilePicture: joinedUser.profileImage,
                 userId,

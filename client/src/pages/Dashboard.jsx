@@ -237,7 +237,8 @@ export default function Dashboard() {
     useEffect(() => {
         polyfill({
             dragImageTranslateOverride: scrollBehaviourDragImageTranslateOverride,
-            forceApplyEffectAllowed: true
+            forceApplyEffectAllowed: true,
+            holdToDrag: 500
         });
         const onTouchMove = () => {};
         window.addEventListener('touchmove', onTouchMove, { passive: false });

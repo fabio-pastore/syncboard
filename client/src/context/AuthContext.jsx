@@ -11,6 +11,22 @@ export function AuthProvider({ children }) {
         const token = localStorage.getItem('token');
         const stored = localStorage.getItem('user');
         if (token && stored) {
+            try {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                if (payload.exp * 1000 < Date.now()) {
+                    localStorage.removeItem('token');
+                    localStorage.removeItem('user');
+                    setUser(null);
+                    setLoading(false);
+                    return;
+                }
+            } catch {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                setUser(null);
+                setLoading(false);
+                return;
+            }
             setUser(JSON.parse(stored));
         }
         setLoading(false);
