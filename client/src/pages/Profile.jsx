@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../api';
+import { X, CheckCircle, AlertCircle, User, AlertTriangle, Loader2 } from 'lucide-react';
 
 const MAX_DIMENSION = 256;
 
@@ -38,7 +39,7 @@ function resizeImage(file) {
 }
 
 export default function Profile({ open, onClose }) {
-    const { user, updateUser } = useAuth();
+    const { user, updateUser, logout } = useAuth();
     const fileInputRef = useRef(null);
 
     const [username, setUsername] = useState(user.username);
@@ -49,6 +50,11 @@ export default function Profile({ open, onClose }) {
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
 
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [deletePassword, setDeletePassword] = useState('');
+    const [deleteError, setDeleteError] = useState('');
+    const [deleting, setDeleting] = useState(false);
+
     useEffect(() => {
         if (open) {
             setUsername(user.username);
@@ -57,6 +63,9 @@ export default function Profile({ open, onClose }) {
             setProfileImage(user.profileImage || null);
             setMessage('');
             setError('');
+            setShowDeleteConfirm(false);
+            setDeletePassword('');
+            setDeleteError('');
         }
     }, [open, user]);
 
@@ -137,6 +146,25 @@ export default function Profile({ open, onClose }) {
         }
     }
 
+    async function handleDeleteAccount(e) {
+        e.preventDefault();
+        if (!deletePassword.trim()) return;
+        setDeleteError('');
+        setDeleting(true);
+        try {
+            await apiFetch('/user/account', {
+                method: 'DELETE',
+                body: JSON.stringify({ password: deletePassword }),
+            });
+            logout();
+        } catch (err) {
+            const errorDetail = (err.error || err.message || "").toLowerCase();
+            setDeleteError(`Failed to delete account${errorDetail ? `: ${errorDetail}` : ""}`);
+        } finally {
+            setDeleting(false);
+        }
+    }
+
     if (!open) return null;
 
     return (
@@ -158,26 +186,20 @@ export default function Profile({ open, onClose }) {
                         onClick={onClose}
                         className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition cursor-pointer"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                            <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                        </svg>
+                        <X className="w-5 h-5" />
                     </button>
                 </div>
 
                 <div className="px-6 py-6">
                     {message && (
                         <div className="mb-5 px-4 py-2.5 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm flex items-center gap-2 animate-[slideUp_0.2s_ease]">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 shrink-0">
-                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
-                            </svg>
+                            <CheckCircle className="w-4 h-4 shrink-0" />
                             {message}
                         </div>
                     )}
                     {error && (
                         <div className="mb-5 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm flex items-center gap-2 animate-[slideUp_0.2s_ease]">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 shrink-0">
-                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
-                            </svg>
+                            <AlertCircle className="w-4 h-4 shrink-0" />
                             {error}
                         </div>
                     )}
@@ -195,9 +217,7 @@ export default function Profile({ open, onClose }) {
                                         className="w-full h-full object-cover"
                                     />
                                 ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-10 h-10 text-gray-300">
-                                        <path fillRule="evenodd" d="M18.685 19.097A9.723 9.723 0 0021.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 003.065 7.097A9.716 9.716 0 0012 21.75a9.716 9.716 0 006.685-2.653zm-12.54-1.285A7.486 7.486 0 0112 15a7.486 7.486 0 015.855 2.812A8.224 8.224 0 0112 20.25a8.224 8.224 0 01-5.855-2.438zM15.75 9a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z" clipRule="evenodd" />
-                                    </svg>
+                                    <User className="w-10 h-10 text-gray-300" />
                                 )}
                                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition rounded-full">
                                     <span className="text-white text-xs font-medium">Change</span>
@@ -273,17 +293,89 @@ export default function Profile({ open, onClose }) {
                         >
                             {saving ? (
                                 <>
-                                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                                    </svg>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
                                     Saving…
                                 </>
                             ) : 'Save Changes'}
                         </button>
                     </form>
+
+                    <div className="mt-8 pt-6 border-t border-gray-100">
+                        <button
+                            type="button"
+                            onClick={() => { setShowDeleteConfirm(true); setDeletePassword(''); setDeleteError(''); }}
+                            className="w-full py-2.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 font-medium transition cursor-pointer text-sm"
+                        >
+                            Delete Account
+                        </button>
+                    </div>
                 </div>
             </div>
+
+            {showDeleteConfirm && (
+                <div
+                    className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] animate-[fadeIn_0.15s_ease]"
+                    onClick={() => setShowDeleteConfirm(false)}
+                >
+                    <div
+                        className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-[slideUp_0.15s_ease]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center gap-4 mb-4">
+                            <div className="w-12 h-12 rounded-full bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
+                                <AlertTriangle className="w-5 h-5 text-red-500" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900">Delete Account</h3>
+                        </div>
+
+                        <p className="text-sm text-gray-500 mb-4">
+                            This will permanently delete your account, all your boards, folders, and associated data. <span className="font-semibold text-gray-800">This action cannot be undone.</span>
+                        </p>
+
+                        {deleteError && (
+                            <div className="mb-4 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-600 text-sm flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4 shrink-0" />
+                                {deleteError}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleDeleteAccount}>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                Enter your password to confirm
+                            </label>
+                            <input
+                                type="password"
+                                value={deletePassword}
+                                onChange={(e) => setDeletePassword(e.target.value)}
+                                placeholder="Current password"
+                                autoFocus
+                                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 text-gray-800 placeholder-gray-400 outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 transition text-sm mb-4"
+                            />
+                            <div className="flex gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowDeleteConfirm(false)}
+                                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition text-sm font-medium cursor-pointer"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={!deletePassword.trim() || deleting}
+                                    className="flex-1 px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 disabled:bg-red-300 text-white transition text-sm font-medium cursor-pointer shadow-sm flex items-center justify-center gap-2"
+                                >
+                                    {deleting ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Deleting…
+                                        </>
+                                    ) : 'Delete my account'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
 
             <style>{`
                 @keyframes fadeIn {

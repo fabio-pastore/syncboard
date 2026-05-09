@@ -1,6 +1,9 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
 const User = require('../models/Users');
+const Board = require('../models/Board');
+const BoardLine = require('../models/BoardLine');
+const Folder = require('../models/Folder');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
@@ -60,6 +63,44 @@ router.put('/profile', async (req, res) => {
         res.json(user);
     } catch (err) {
         console.error('PUT /user/profile error:', err);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// DELETE /api/user/account
+router.delete('/account', async (req, res) => {
+    try {
+        const { password } = req.body;
+        if (!password) {
+            return res.status(400).json({ message: 'Password is required' });
+        }
+
+        const user = await User.findById(req.userId);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const valid = await bcrypt.compare(password, user.passwordHash);
+        if (!valid) return res.status(403).json({ message: 'Incorrect password' });
+
+        const userBoards = await Board.find({ owner: req.userId }).select('_id');
+        const boardIds = userBoards.map(b => b._id);
+        if (boardIds.length > 0) {
+            await BoardLine.deleteMany({ boardId: { $in: boardIds } });
+        }
+
+        await Board.deleteMany({ owner: req.userId });
+
+        await Board.updateMany(
+            { 'sharedWith.user': req.userId },
+            { $pull: { sharedWith: { user: req.userId } } }
+        );
+
+        await Folder.deleteMany({ owner: req.userId });
+
+        await User.findByIdAndDelete(req.userId);
+
+        res.json({ message: 'Account deleted successfully' });
+    } catch (err) {
+        console.error('DELETE /user/account error:', err);
         res.status(500).json({ message: 'Internal server error' });
     }
 });

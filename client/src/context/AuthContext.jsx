@@ -36,6 +36,7 @@ export function AuthProvider({ children }) {
         const data = await apiFetch('/auth/signup', {
             method: 'POST',
             body: JSON.stringify({ email, username, password }),
+            skipAuthRedirect: true,
         });
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
@@ -47,6 +48,7 @@ export function AuthProvider({ children }) {
         const data = await apiFetch('/auth/login', {
             method: 'POST',
             body: JSON.stringify({ identifier, password }),
+            skipAuthRedirect: true,
         });
         localStorage.setItem('token', data.token);
         localStorage.setItem('user', JSON.stringify(data.user));
