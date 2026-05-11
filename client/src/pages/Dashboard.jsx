@@ -603,7 +603,12 @@ export default function Dashboard() {
                                     onDrop={(e) => { e.preventDefault(); moveItem(folder._id); }}
                                 >
                                     <div className="w-full aspect-square flex items-center justify-center p-2 border-b border-gray-100">
-                                        <img src={folderIcon} alt="Folder" className="w-[85%] h-[85%] object-contain drop-shadow-sm translate-x-0.5" />
+                                        <img 
+                                            src={folderIcon} 
+                                            alt="Folder" 
+                                            draggable={false}
+                                            className="w-[85%] h-[85%] object-contain drop-shadow-sm translate-x-0.5 pointer-events-none select-none" 
+                                        />
                                     </div>
 
                                     <div className="px-1.5 py-2 flex items-center justify-center min-h-[36px]">
@@ -711,10 +716,15 @@ export default function Dashboard() {
                                     ) : (
                                         <>
                                             {board.thumbnail ? (
-                                                <img src={board.thumbnail} alt={board.name} className="w-full aspect-[4/3] bg-gray-50 border-b border-gray-100 object-contain" />
+                                                <img 
+                                                    src={board.thumbnail} 
+                                                    alt={board.name}
+                                                    draggable={false} 
+                                                    className="w-full aspect-[4/3] bg-gray-50 border-b border-gray-100 object-contain pointer-events-none select-none" 
+                                                />
                                             ) : (
                                                 <div className="w-full aspect-[4/3] bg-gradient-to-br from-gray-50 to-gray-100 border-b border-gray-100 flex items-center justify-center">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8 text-gray-300">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-8 h-8 text-gray-300 pointer-events-none">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
                                                     </svg>
                                                 </div>
