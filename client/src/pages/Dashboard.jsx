@@ -10,6 +10,12 @@ import { polyfill } from "mobile-drag-drop";
 import { scrollBehaviourDragImageTranslateOverride } from "mobile-drag-drop/scroll-behaviour"; 
 import "mobile-drag-drop/default.css";
 
+/**
+ * Converts a date string into a relative time representation (e.g., "just now", "5m ago").
+ * 
+ * @param {string|Date} dateStr - The date to convert.
+ * @returns {string} The formatted relative time string.
+ */
 function timeAgo(dateStr) {
     const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
     if (seconds < 60) return 'just now';
@@ -24,6 +30,14 @@ function timeAgo(dateStr) {
 
 // me when the menu is kebab
 // i <3 🌯 (this is a kebab in case emoji doesn't render)
+/**
+ * A reusable dropdown kebab menu component.
+ * 
+ * @param {Object} props - Component properties.
+ * @param {Array<Object>} props.items - Menu items to display. Can contain `label`, `icon`, `danger`, `onClick`, or `divider`.
+ * @param {string} [props.align='right'] - Alignment of the dropdown menu ('left' or 'right').
+ * @returns {JSX.Element} The KebabMenu component.
+ */
 function KebabMenu({ items, align = 'right' }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
@@ -76,6 +90,14 @@ function KebabMenu({ items, align = 'right' }) {
     );
 }
 
+/**
+ * A popover component to create new folders or boards.
+ * 
+ * @param {Object} props - Component properties.
+ * @param {string|null} props.currentFolder - ID of the currently open folder, or null if at root.
+ * @param {Function} props.onCreated - Callback function to refresh data after creation.
+ * @returns {JSX.Element} The CreatePopover component.
+ */
 function CreatePopover({ currentFolder, onCreated }) {
     const [mode, setMode] = useState(null); // null | 'folder' | 'board'
     const [name, setName] = useState('');
@@ -177,6 +199,15 @@ function CreatePopover({ currentFolder, onCreated }) {
     );
 }
 
+/**
+ * A small inline form component used to rename folders and boards.
+ * 
+ * @param {Object} props - Component properties.
+ * @param {string} props.defaultValue - The initial name to display.
+ * @param {Function} props.onSave - Callback function triggered when saving the new name.
+ * @param {Function} props.onCancel - Callback function triggered when cancelling the rename action.
+ * @returns {JSX.Element} The InlineRename component.
+ */
 function InlineRename({ defaultValue, onSave, onCancel }) {
     const [val, setVal] = useState(defaultValue);
     const ref = useRef(null);
@@ -209,6 +240,14 @@ function InlineRename({ defaultValue, onSave, onCancel }) {
     );
 }
 
+/**
+ * The main Dashboard component.
+ * 
+ * Displays the user's folders, owned boards, and shared boards.
+ * Supports drag-and-drop to move items, inline renaming, folder navigation, and search.
+ * 
+ * @returns {JSX.Element} The Dashboard component.
+ */
 export default function Dashboard() {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
@@ -267,6 +306,10 @@ export default function Dashboard() {
         return () => clearTimeout(timer);
     }, [searchQuery]);
 
+    /**
+     * Fetches folders and boards from the API depending on the `currentFolder` state.
+     * Updates the `folders`, `boards`, and `sharedBoards` state variables.
+     */
     async function loadContents() {
         setLoading(true);
         try {
@@ -298,6 +341,11 @@ export default function Dashboard() {
         }
     }
 
+    /**
+     * Moves a dragged item (folder or board) into a target folder or root.
+     * 
+     * @param {string|null} tfid - The target folder ID ('home' represents root `null`).
+     */
     async function moveItem(tfid) {
         const targetId = tfid === 'home' ? null : tfid;
         if (!draggedItem) return;
@@ -317,12 +365,20 @@ export default function Dashboard() {
         }
     }
 
+    /**
+     * Navigates into a specified folder by pushing it onto the folder path.
+     * 
+     * @param {Object} folder - The folder object to navigate into.
+     */
     function openFolder(folder) {
         setFolderPath((prev) => [...prev, { id: folder._id, parentId: currentFolder, name: folder.name }]);
         setCurrentFolder(folder._id);
         setSearchQuery(''); // reset search if the folder was opened using search tool
     }
 
+    /**
+     * Navigates up one level in the folder hierarchy by popping the last folder from the path.
+     */
     function goBack() {
         const prev = [...folderPath];
         const current = prev.pop();
@@ -330,11 +386,20 @@ export default function Dashboard() {
         setCurrentFolder(current?.parentId || null);
     }
 
+    /**
+     * Returns to the root directory, clearing the folder path and setting current folder to null.
+     */
     function goHome() {
         setFolderPath([]);
         setCurrentFolder(null);
     }
 
+    /**
+     * Renames a folder by its ID and refreshes the dashboard contents.
+     * 
+     * @param {string} id - The folder ID.
+     * @param {string} newName - The new folder name.
+     */
     async function renameFolder(id, newName) {
         try {
             await apiFetch(`/folders/${id}`, { method: 'PUT', body: JSON.stringify({ name: newName }) });
@@ -346,6 +411,12 @@ export default function Dashboard() {
         }
     }
 
+    /**
+     * Renames a board by its ID and refreshes the dashboard contents.
+     * 
+     * @param {string} id - The board ID.
+     * @param {string} newName - The new board name.
+     */
     async function renameBoard(id, newName) {
         try {
             await apiFetch(`/boards/${id}`, { method: 'PUT', body: JSON.stringify({ name: newName }) });
@@ -357,6 +428,9 @@ export default function Dashboard() {
         }
     }
 
+    /**
+     * Confirms the deletion of a board or folder, sends the DELETE request, and refreshes contents.
+     */
     async function confirmDelete() {
         if (!itemToDelete) return;
         const { id, type } = itemToDelete;
@@ -372,6 +446,12 @@ export default function Dashboard() {
         }
     }
 
+    /**
+     * Sorts an array of items (folders or boards) based on the `sortBy` and `sortOrder` state variables.
+     * 
+     * @param {Array<Object>} items - The items to sort.
+     * @returns {Array<Object>} The sorted array of items.
+     */
     function sortItems(items) {
         const sorted = [...items];
         sorted.sort((a, b) => {
@@ -411,6 +491,7 @@ export default function Dashboard() {
     return (
         <div className="min-h-screen bg-gray-50/60 text-gray-700">
 
+            {/* Dashboard Header - Includes Logo, Search bar, and Profile/Logout actions */}
             <header className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-gray-200">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
 
@@ -496,7 +577,9 @@ export default function Dashboard() {
                 </div>
             </header>
 
+            {/* Main Content Area */}
             <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+                {/* Error message display */}
                 {error && (
                     <div className="mb-4 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-600 flex items-center justify-between text-sm animate-[slideDown_0.2s_ease]">
                         <div className="flex items-center gap-2">
@@ -513,6 +596,7 @@ export default function Dashboard() {
                     </div>
                 )}
 
+                {/* Navigation path breadcrumbs and create button */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                     <nav className="flex items-center gap-1 text-sm flex-wrap min-w-0">
                         <button
@@ -575,6 +659,7 @@ export default function Dashboard() {
                     </div>
                 )}
 
+                {/* Folders grid container */}
                 {!loading && filteredFolders.length > 0 && (
                     <section className="mb-8">
                         <div className="flex items-center gap-2 mb-3">
@@ -653,6 +738,7 @@ export default function Dashboard() {
                     <div className="w-full h-px bg-gray-200/80 my-8"></div>
                 )}
 
+                {/* Boards grid container */}
                 {!loading && filteredBoards.length > 0 && (
                     <section className="mb-8">
                         <div className="flex items-center justify-between gap-2 mb-3">
@@ -759,6 +845,7 @@ export default function Dashboard() {
                     </section>
                 )}
 
+                {/* Shared boards grid container */}
                 {!loading && filteredShared.length > 0 && !currentFolder && (
                     <section className="mb-8">
                         <div className="flex items-center gap-2 mb-3">
@@ -828,6 +915,7 @@ export default function Dashboard() {
 
             <Profile open={showProfile} onClose={() => setShowProfile(false)} />
 
+            {/* Delete confirmation modal overlay */}
             {itemToDelete && (
                 <div 
                     className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 animate-[fadeIn_0.15s_ease]" 

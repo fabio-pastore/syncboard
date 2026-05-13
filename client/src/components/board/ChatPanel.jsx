@@ -3,6 +3,26 @@ import { MessageCircle, X, Send } from "lucide-react";
 import SentMessage from "./SentMessage";
 import ReceivedMessage from "./ReceivedMessage";
 
+/**
+ * A chat panel component for real-time board communication.
+ *
+ * Provides a toggle button with an unread message badge, a slide-out chat panel
+ * with a message list, and a text input for sending new messages. Messages are
+ * emitted to the server via a socket connection and displayed locally.
+ *
+ * @param {object} props - Component props.
+ * @param {boolean} props.chatOpen - Whether the chat panel is currently visible.
+ * @param {function} props.setChatOpen - Sets the visibility state of the chat panel.
+ * @param {Array} props.chatMessages - Array of chat message objects to display.
+ * @param {function} props.setChatMessages - Sets the chat messages state.
+ * @param {number} props.unreadMessages - The count of unread messages.
+ * @param {function} props.setUnreadMessages - Sets the unread message count.
+ * @param {React.MutableRefObject} props.socketRef - Ref to the active socket connection.
+ * @param {object} props.user - The current authenticated user object.
+ * @param {function} props.setIsOpenContextMenu - Callback to manage context menu state.
+ * @returns {JSX.Element} The chat panel component.
+ */
+
 export default function ChatPanel({ chatOpen, setChatOpen, chatMessages, setChatMessages, unreadMessages, setUnreadMessages, socketRef, user, setIsOpenContextMenu }) {
     const [inputMessage, setInputMessage] = useState("");
     const inputMessageRef = useRef(null);
@@ -11,8 +31,14 @@ export default function ChatPanel({ chatOpen, setChatOpen, chatMessages, setChat
     useEffect(() => { inputMessageRef.current = inputMessage }, [inputMessage]);
     useEffect(() => { scrollToBottom(); }, [chatMessages]);
 
+    /**
+     * Scrolls the chat message container to the bottom.
+     */
     const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behaviour: "smooth" }); };
 
+    /**
+     * Sends the current input message to the server and displays it locally.
+     */
     const sendMessage = () => {
         if (!inputMessageRef.current) return;
         const curr_time = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });

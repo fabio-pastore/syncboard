@@ -7,9 +7,20 @@ const authMiddleware = require('../middleware/auth')
 const router = express.Router();
 const MAX_TB_SIZE = 150000
 
+// all routes require authentication
 router.use(authMiddleware);
 
-// GET /api/boards
+/**
+ * GET /api/boards
+ *
+ * Retrieves all boards that the authenticated user owns or has access to.
+ * Returns boards with thumbnail and folder information, sorted by update time
+ * (most recent first).
+ *
+ * @name GET /api/boards
+ * @function
+ * @returns {Array<object>} Array of board objects with owner username and folder name populated.
+ */
 router.get('/', async (req, res) => {
     try {
         const boards = await Board.find({
@@ -24,7 +35,19 @@ router.get('/', async (req, res) => {
     }
 });
 
-// POST /api/boards/create
+/**
+ * POST /api/boards/create
+ *
+ * Creates a new board. The authenticated user becomes the board owner.
+ * The board is created with a name, optional folder assignment, and
+ * default background settings.
+ *
+ * @name POST /api/boards/create
+ * @function
+ * @param {string} name - The name for the new board.
+ * @param {string} [folder] - Optional ID of the parent folder.
+ * @returns {object} The newly created board document.
+ */
 router.post('/create', async (req, res) => {
     try {
         const { name, folder } = req.body;
@@ -41,8 +64,17 @@ router.post('/create', async (req, res) => {
     }
 });
 
-// GET /api/boards/folder/:folderId
-
+/**
+ * GET /api/boards/folder/:folderId
+ *
+ * Retrieves all boards that belong to a specific folder and are owned by the authenticated user.
+ * Returns boards sorted by update time (most recent first).
+ *
+ * @name GET /api/boards/folder/:folderId
+ * @function
+ * @param {string} folderId - The ID of the folder to retrieve boards from.
+ * @returns {Array<object>} Array of board objects within the specified folder.
+ */
 router.get('/folder/:folderId', async (req, res) => {
     try {
         const boards = await Board.find({
@@ -55,7 +87,17 @@ router.get('/folder/:folderId', async (req, res) => {
     }
 });
 
-// GET /api/boards/:id
+/**
+ * GET /api/boards/:id
+ *
+ * Retrieves a single board by its ID. Verifies that the requesting user
+ * is either the owner or has been shared the board.
+ *
+ * @name GET /api/boards/:id
+ * @function
+ * @param {string} id - The board ID.
+ * @returns {object} The board document with owner info populated.
+ */
 router.get('/:id', async (req, res) => {
     try {
         const board = await Board.findOne({
@@ -79,7 +121,18 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-// PUT /api/boards/:id
+/**
+ * PUT /api/boards/:id
+ *
+ * Updates a board's metadata (name or folder). Only the board owner can update.
+ *
+ * @name PUT /api/boards/:id
+ * @function
+ * @param {string} id - The board ID.
+ * @param {string} [name] - New board name.
+ * @param {string|null} [folder] - New parent folder ID, or null to remove.
+ * @returns {object} The updated board document.
+ */
 router.put('/:id', async (req, res) => {
     try {
         const {name, folder} = req.body;
@@ -102,6 +155,19 @@ router.put('/:id', async (req, res) => {
     }
 })
 
+/**
+ * POST /api/boards/:id/share/user
+ *
+ * Permanently shares the board with another user by their username.
+ * Only the board owner can share with other users.
+ *
+ * @name POST /api/boards/:id/share/user
+ * @function
+ * @param {string} id - The board ID.
+ * @param {string} username - The username of the user to share with.
+ * @param {string} role - The role to assign ('viewer' or 'editor').
+ * @returns {object} JSON with the shared user's ID, username, and role.
+ */
 router.post('/:id/share/user', async (req, res) => {
     try {
         const { username, role } = req.body;
@@ -132,7 +198,17 @@ router.post('/:id/share/user', async (req, res) => {
     }
 });
 
-// DELETE /api/boards/:id/share/user/:userId
+/**
+ * DELETE /api/boards/:id/share/user/:userId
+ *
+ * Removes a user's access to the board. Only the board owner can revoke access.
+ *
+ * @name DELETE /api/boards/:id/share/user/:userId
+ * @function
+ * @param {string} id - The board ID.
+ * @param {string} userId - The ID of the user to remove.
+ * @returns {object} JSON confirmation message.
+ */
 router.delete('/:id/share/user/:targetUserId', async (req, res) => {
     try {
         const board = await Board.findOne({ _id: req.params.id, owner: req.userId });
@@ -159,8 +235,19 @@ router.delete('/:id/share/user/:targetUserId', async (req, res) => {
     }
 });
 
-// POST /api/boards/:id/share  (one-time link)
-router.post('/:id/share', async (req, res) => {
+/**
+ * POST /api/boards/:id/share
+ *
+ * Generates a one-time share token for the board with the specified role.
+ * Only the board owner can create share links.
+ *
+ * @name POST /api/boards/:id/share
+ * @function
+ * @param {string} id - The board ID.
+ * @param {string} role - The role for the share link ('viewer' or 'editor').
+ * @returns {object} JSON with the generated `shareToken`.
+ */
+router.post('/:id/share', async (req, res) => { // (generate one time link)
     try {
         const { role } = req.body;
         if (!['viewer', 'editor'].includes(role)) {
@@ -178,7 +265,16 @@ router.post('/:id/share', async (req, res) => {
     }
 });
 
-// DELETE /api/boards/:id
+/**
+ * DELETE /api/boards/:id
+ *
+ * Deletes a board and all its associated lines. Only the board owner can delete.
+ *
+ * @name DELETE /api/boards/:id
+ * @function
+ * @param {string} id - The board ID.
+ * @returns {object} JSON confirmation message.
+ */
 router.delete('/:id', async (req, res) => {
     try {
         const board = await Board.findOneAndDelete({
@@ -195,7 +291,18 @@ router.delete('/:id', async (req, res) => {
     }
 })
 
-// PUT /api/boards/:id/thumbnail
+/**
+ * PUT /api/boards/:id/thumbnail
+ *
+ * Saves or updates the thumbnail image (base64 data URL) for a board.
+ * Only the board owner can update the thumbnail.
+ *
+ * @name PUT /api/boards/:id/thumbnail
+ * @function
+ * @param {string} id - The board ID.
+ * @param {string} thumbnail - The base64-encoded image data URL.
+ * @returns {object} JSON confirmation message.
+ */
 router.put('/:id/thumbnail', async (req, res) => {
     try {
         const { thumbnail } = req.body;

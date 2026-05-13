@@ -5,6 +5,47 @@ import { apiFetch } from "../api";
 import { SOCKET_URL, CURSOR_COLORS, CURSOR_IDLE_REMOVE } from "../utils/boardConstants";
 import { decodeCursorBatch } from "../utils/boardUtils";
 
+/**
+ * Manages the WebSocket connection and state for a collaborative board session.
+ *
+ * Establishes a Socket.io connection to the server, joins a board room, and listens
+ * for real-time events including shape updates, cursor movements, peer list changes,
+ * chat messages, and background modifications. Handles both regular board access and
+ * shared (token-based) access. Also manages periodic cleanup of idle remote cursors.
+ *
+ * @param {object} params - Hook parameters.
+ * @param {string} params.id - The board ID (or token for shared boards).
+ * @param {string} params.token - The JWT auth token from localStorage.
+ * @param {boolean} params.shared - Whether the board is being accessed via a share link.
+ * @param {function} params.onShapeUpdate - Callback invoked when a remote shape is updated, used to clear stale selections.
+ * @param {function} params.reorderLines - Function to sort lines array by creation time.
+ * @returns {object} The complete board session state, including:
+ *   - board {object|null}: The board metadata.
+ *   - setBoard {function}: Sets the board metadata.
+ *   - lines {Array}: The array of line objects on the board.
+ *   - setLines {function}: Sets the lines array.
+ *   - peers {number}: The number of connected peers.
+ *   - peerEntries {Array}: Array of connected peer user objects.
+ *   - role {string}: The current user's role ('editor' or 'viewer').
+ *   - setRole {function}: Sets the user's role.
+ *   - error {string}: Error message string, if any.
+ *   - setError {function}: Sets the error message.
+ *   - socketRef {React.MutableRefObject}: Ref to the active Socket.io connection.
+ *   - chatMessages {Array}: Array of chat message objects.
+ *   - setChatMessages {function}: Sets the chat messages array.
+ *   - chatOpen {boolean}: Whether the chat panel is open.
+ *   - setChatOpen {function}: Sets the chat panel visibility.
+ *   - chatOpenRef {React.MutableRefObject}: Ref tracking chat panel visibility.
+ *   - unreadMessages {number}: Count of unread chat messages.
+ *   - setUnreadMessages {function}: Sets the unread message count.
+ *   - cursors {object}: Object mapping socket IDs to remote cursor state.
+ *   - bgColor {string}: The board background color.
+ *   - setBgColor {function}: Sets the board background color.
+ *   - bgPattern {string}: The board background pattern ID.
+ *   - setBgPattern {function}: Sets the board background pattern.
+ *   - isLoading {boolean}: Whether the initial board data is still loading.
+ */
+
 export default function useSocket({ id, token, shared, onShapeUpdate, reorderLines }) {
     const [board, setBoard] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -24,14 +65,21 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
     const navigate = useNavigate();
     const mySocketIdRef = useRef(null);
 
-    // different color for each user so it's unique thanks stack overflow
+    /**
+     * Generates a deterministic color for a cursor based on the socket ID.
+     * Uses a simple hash function to pick from a preset palette, ensuring
+     * each user consistently gets the same color.
+     *
+     * @param {string} socketId - The socket ID to hash.
+     * @returns {string} A hex color string from CURSOR_COLORS.
+     */
     const getCursorColor = useCallback((socketId) => {
         let hash = 0;
         for (let i = 0; i < socketId.length; i++) {
             hash = ((hash << 5) - hash) + socketId.charCodeAt(i);
             hash |= 0; 
         }
-        return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];
+        return CURSOR_COLORS[Math.abs(hash) % CURSOR_COLORS.length];  // different color for each user so it's unique thanks stack overflow
     }, []);
 
     useEffect(() => {
@@ -39,6 +87,13 @@ export default function useSocket({ id, token, shared, onShapeUpdate, reorderLin
     }, [chatOpen]);
 
     useEffect(() => {
+        /**
+         * Initializes the board session by fetching board data from the API,
+         * establishing a Socket.io connection, and setting up event listeners
+         * for all real-time collaboration features.
+         *
+         * @returns {Promise<void>}
+         */
         async function init() {
             if (socketRef.current) {
                 socketRef.current.disconnect();

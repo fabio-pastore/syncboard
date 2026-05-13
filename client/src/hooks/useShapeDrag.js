@@ -2,6 +2,32 @@ import { useRef, useCallback } from "react";
 import { NUM_MAX_UNDO, UPDATE_INTERVAL } from "../utils/boardConstants";
 import { translatePoints } from "../utils/boardUtils";
 
+/**
+ * Manages the dragging of selected shapes on the board.
+ *
+ * Handles the start, move, and end phases of a drag operation on the current
+ * selection. Updates the positions of all selected lines in real-time, throttles
+ * socket emissions for collaborative previews, and records the drag in the edit
+ * history for undo/redo.
+ *
+ * @param {object} params - Hook parameters.
+ * @param {React.RefObject} params.stageRef - Ref to the Konva Stage instance.
+ * @param {React.MutableRefObject<Array>} params.linesRef - Ref to the current lines array.
+ * @param {function} params.setLines - Sets the complete lines array.
+ * @param {React.MutableRefObject<object|null>} params.selectionBBoxRef - Ref to the selection bounding box.
+ * @param {function} params.setSelectionBBox - Sets the selection bounding box.
+ * @param {React.MutableRefObject<Array<string>>} params.selectedIdsRef - Ref to the array of selected line IDs.
+ * @param {function} params.setEditHistory - Sets the edit history state.
+ * @param {React.MutableRefObject} params.socketRef - Ref to the active socket connection.
+ * @param {function} params.setIsDraggingSelection - Sets the dragging selection state.
+ * @param {function} params.setIsManipulating - Sets the global manipulating state.
+ * @returns {object} An object containing:
+ *   - isDraggingSelectionRef {React.MutableRefObject<boolean>}: Ref tracking if a drag is active.
+ *   - handleDragStart {function}: Initiates the drag operation.
+ *   - handleDragMove {function}: Updates positions during the drag.
+ *   - handleDragEnd {function}: Finalizes the drag and records it in history.
+ */
+
 export default function useShapeDrag({
     stageRef,
     linesRef,
@@ -19,6 +45,12 @@ export default function useShapeDrag({
     const linesBeforeDragRef = useRef([]);
     const lastTmpDragEmitRef = useRef(0);
 
+    /**
+     * Begins the drag operation.
+     * Captures the initial state of all lines for history purposes.
+     *
+     * @param {object} pos - The starting {x, y} position of the drag.
+     */
     const handleDragStart = useCallback((pos) => {
         setIsDraggingSelection(true);
         setIsManipulating(true);
@@ -27,6 +59,14 @@ export default function useShapeDrag({
         dragStartRef.current = { x: pos.x, y: pos.y };
     }, [linesRef, setIsDraggingSelection, setIsManipulating]);
 
+    /**
+     * Handles the movement during a drag.
+     * Translates all selected lines by the delta from the last drag position.
+     * Throttled socket emissions for real-time collaborative previews.
+     *
+     * @param {object} pointerPos - The current pointer {x, y} position.
+     * @param {number} pointerScale - The current stage scale.
+     */
     const handleDragMove = useCallback((pointerPos, pointerScale) => {
         const stage = stageRef.current;
         const pos = {
@@ -72,6 +112,11 @@ export default function useShapeDrag({
         }
     }, [stageRef, selectedIdsRef, setLines, setSelectionBBox, socketRef]);
 
+    /**
+     * Ends the drag operation.
+     * Compares the final state against the initial state and records a 'drag' operation
+     * in the edit history if any lines actually moved. Emits final positions to collaborators.
+     */
     const handleDragEnd = useCallback(() => {
         setIsDraggingSelection(false);
         setIsManipulating(false);

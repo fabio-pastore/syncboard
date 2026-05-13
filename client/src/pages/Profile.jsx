@@ -5,6 +5,13 @@ import { X, CheckCircle, AlertCircle, User, AlertTriangle, Loader2 } from 'lucid
 
 const MAX_DIMENSION = 256;
 
+/**
+ * Resizes an image file to fit within MAX_DIMENSION pixels on its longest side,
+ * returning a base64 JPEG data URL. Used to reduce upload size for profile images.
+ *
+ * @param {File} file - The image file selected by the user.
+ * @returns {Promise<string>} A promise that resolves with the resized image data URL.
+ */
 function resizeImage(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -38,6 +45,18 @@ function resizeImage(file) {
     });
 }
 
+/**
+ * A slide-out profile settings panel for editing user information.
+ *
+ * Allows the user to update their username, email, password, and profile image.
+ * Also provides account deletion functionality with password confirmation.
+ * Closes on Escape key press or clicking the backdrop.
+ *
+ * @param {object} props - Component props.
+ * @param {boolean} props.open - Whether the profile panel is visible.
+ * @param {function} props.onClose - Callback to close the panel.
+ * @returns {JSX.Element|null} The profile panel, or null if not open.
+ */
 export default function Profile({ open, onClose }) {
     const { user, updateUser, logout } = useAuth();
     const fileInputRef = useRef(null);
@@ -89,6 +108,13 @@ export default function Profile({ open, onClose }) {
         return () => { document.body.style.overflow = ''; };
     }, [open]);
 
+    /**
+     * Handles the profile image file selection.
+     * Resizes the image and stores it as a base64 data URL for upload.
+     *
+     * @param {Event} e - The file input change event.
+     * @returns {Promise<void>}
+     */
     async function handleImageChange(e) {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -104,11 +130,21 @@ export default function Profile({ open, onClose }) {
         }
     }
 
+    /**
+     * Removes the current profile image.
+     */
     function removeImage() {
         setProfileImage(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
     }
 
+    /**
+     * Handles the profile update form submission.
+     * Sends changed fields to the server and updates the local user state.
+     *
+     * @param {Event} e - The form submit event.
+     * @returns {Promise<void>}
+     */
     async function handleSubmit(e) {
         e.preventDefault();
         setError('');
@@ -146,6 +182,14 @@ export default function Profile({ open, onClose }) {
         }
     }
 
+    /**
+     * Handles the account deletion form submission.
+     * Requires the user's current password for confirmation.
+     * Logs the user out on successful deletion.
+     *
+     * @param {Event} e - The form submit event.
+     * @returns {Promise<void>}
+     */
     async function handleDeleteAccount(e) {
         e.preventDefault();
         if (!deletePassword.trim()) return;
@@ -169,6 +213,7 @@ export default function Profile({ open, onClose }) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* Backdrop for closing modal */}
             <div
                 className="absolute inset-0 bg-black/30 backdrop-blur-sm animate-[fadeIn_0.2s_ease]"
                 onClick={onClose}
@@ -180,6 +225,7 @@ export default function Profile({ open, onClose }) {
                 sm:w-[440px] sm:max-h-[90vh] sm:rounded-2xl sm:border sm:border-gray-200
                 animate-[slideUp_0.25s_ease]
             ">
+                {/* Modal Header */}
                 <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-gray-100 px-6 py-4 flex items-center justify-between z-10">
                     <h2 className="text-lg font-semibold text-gray-900">Profile Settings</h2>
                     <button
@@ -191,6 +237,7 @@ export default function Profile({ open, onClose }) {
                 </div>
 
                 <div className="px-6 py-6">
+                    {/* Status Messages */}
                     {message && (
                         <div className="mb-5 px-4 py-2.5 rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm flex items-center gap-2 animate-[slideUp_0.2s_ease]">
                             <CheckCircle className="w-4 h-4 shrink-0" />
@@ -204,6 +251,7 @@ export default function Profile({ open, onClose }) {
                         </div>
                     )}
 
+                    {/* Profile Update Form */}
                     <form onSubmit={handleSubmit} className="space-y-5">
                         <div className="flex flex-col items-center gap-3">
                             <div
@@ -300,6 +348,7 @@ export default function Profile({ open, onClose }) {
                         </button>
                     </form>
 
+                    {/* Account Deletion Section */}
                     <div className="mt-8 pt-6 border-t border-gray-100">
                         <button
                             type="button"
@@ -312,6 +361,7 @@ export default function Profile({ open, onClose }) {
                 </div>
             </div>
 
+            {/* Account Deletion Confirmation Modal */}
             {showDeleteConfirm && (
                 <div
                     className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] animate-[fadeIn_0.15s_ease]"

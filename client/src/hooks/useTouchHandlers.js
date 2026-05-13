@@ -1,5 +1,35 @@
 import { useEffect, useRef } from "react";
 
+/**
+ * Manages touch gestures for panning and pinching on the board stage.
+ *
+ * Handles multi-touch events on the stage container to distinguish between
+ * drawing (in finger-draw mode) and view manipulation. Single-finger touch
+ * pans the stage (when not in finger-draw mode), while two-finger pinch
+ * zooms the stage in/out. Respects active pen, rotation, and resize operations
+ * by not interfering with them.
+ *
+ * @param {object} params - Hook parameters.
+ * @param {React.RefObject} params.stageRef - Ref to the Konva Stage instance.
+ * @param {function} params.setScale - Sets the zoom scale state.
+ * @param {React.MutableRefObject<number>} params.scaleRef - Ref to the current stage zoom scale.
+ * @param {React.MutableRefObject<boolean>} params.isDrawingRef - Ref indicating if drawing is in progress.
+ * @param {React.RefObject} params.activeLineRef - Ref to the active drawing Line shape.
+ * @param {React.MutableRefObject<object|null>} params.activeLineDataRef - Ref to the active line data model.
+ * @param {React.RefObject} params.activeCircleStrokeRef - Ref to the active Circle stroke shape.
+ * @param {React.RefObject} params.activeCircleFillRef - Ref to the active Circle fill shape.
+ * @param {React.MutableRefObject<boolean>} params.isPenActiveRef - Ref indicating if pen/stylus is active.
+ * @param {React.MutableRefObject<boolean>} params.isRotatingRef - Ref indicating if rotation is in progress.
+ * @param {React.MutableRefObject<boolean>} params.isResizingRef - Ref indicating if resize is in progress.
+ * @param {React.MutableRefObject<boolean>} params.touchDrawModeRef - Ref indicating if finger-draw mode is active.
+ * @param {React.MutableRefObject<object>} params.stagePositionRef - Ref to the current {x, y} stage position.
+ * @param {function} params.updateBackgroundStyle - Callback to update the CSS background pattern.
+ * @param {function} params.displayZoomMeter - Callback to show the zoom level indicator.
+ * @param {boolean} params.isLoading - Whether the board is still loading.
+ * @returns {object} An object containing:
+ *   - touchCountRef {React.MutableRefObject<number>}: Ref tracking the current number of active touch points.
+ */
+
 export default function useTouchHandlers({
     stageRef,
     setScale,
@@ -30,6 +60,14 @@ export default function useTouchHandlers({
         const container = stageRef.current?.container();
         if (!container) return;
 
+        /**
+         * Handles the touchstart event on the stage container.
+         * Tracks the number of active touches. If a single touch and not in
+         * finger-draw mode, records the touch center for panning. If two or
+         * more touches, cancels any active drawing and records pinch start data.
+         *
+         * @param {TouchEvent} e - The native touch event.
+         */
         const handleTouchStart = (e) => {
             if (isRotatingRef.current || isResizingRef.current) return;
             if (isPenActiveRef.current) return;
@@ -60,6 +98,14 @@ export default function useTouchHandlers({
             }
         };
 
+        /**
+         * Handles the touchmove event on the stage container.
+         * For single touch (not in draw mode), pans the stage. For multi-touch,
+         * calculates pinch-to-zoom and pans the stage accordingly. Updates the
+         * background pattern position and zoom indicator.
+         *
+         * @param {TouchEvent} e - The native touch event.
+         */
         const handleTouchMove = (e) => {
             if (isRotatingRef.current || isResizingRef.current) return;
             if (isPenActiveRef.current) return;
@@ -116,6 +162,13 @@ export default function useTouchHandlers({
             }
         };
 
+        /**
+         * Handles the touchend/touchcancel events on the stage container.
+         * Resets pinch state when all fingers are lifted, or transitions to
+         * single-finger panning if one finger remains.
+         *
+         * @param {TouchEvent} e - The native touch event.
+         */
         const handleTouchEnd = (e) => {
             if (isRotatingRef.current || isResizingRef.current) return;
             if (isPenActiveRef.current) return;

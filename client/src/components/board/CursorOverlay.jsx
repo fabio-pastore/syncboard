@@ -13,6 +13,18 @@ const POINTER_PATH = [
     12, 9,    // right wing
 ];
 
+/**
+ * Renders remote user cursors on the Konva stage.
+ *
+ * Each cursor is drawn as a custom pointer shape with a name label.
+ * Cursors smoothly fade out after a period of inactivity as defined by
+ * CURSOR_IDLE_FADE.
+ *
+ * @param {object} props - Component props.
+ * @param {object} props.cursors - An object mapping socket IDs to cursor state objects.
+ * Each state object contains `x`, `y`, `username`, `color`, and `lastSeen` timestamp.
+ * @returns {Array<JSX.Element|null>} An array of Konva Group elements representing each active cursor.
+ */
 export default function CursorOverlay({ cursors }) {
     const now = Date.now();
 

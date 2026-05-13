@@ -27,6 +27,24 @@ import LoadingScreen from "../components/LoadingScreen";
 
 import { WAIT_BEFORE_EXIT, ZOOM_DISPLAY_TIME } from "../utils/boardConstants";
 
+/**
+ * The main collaborative board page component.
+ *
+ * Orchestrates all board interactions by composing hooks for socket communication,
+ * toolbar state, pointer events, shape manipulation (drag, resize, rotate),
+ * selection, export, background, and undo/redo history. Renders the Konva Stage
+ * with drawing layers, cursor overlay, and all UI overlays (header, toolbar,
+ * chat panel, modals, context menus).
+ *
+ * Handles both regular board access (by ID) and shared board access (by token).
+ * Displays a loading screen while the board data and socket connection are
+ * being initialized.
+ *
+ * @param {object} props - Component props.
+ * @param {boolean} [props.shared=false] - Whether the board is accessed via a share link.
+ * @returns {JSX.Element} The board page or a loading screen.
+ */
+
 export default function Board({ shared = false }) {
     const { id, token } = useParams();
     const { user } = useAuth();
@@ -100,6 +118,9 @@ export default function Board({ shared = false }) {
 
     const [showPeers, setShowPeers] = useState(false);
 
+    /**
+     * Clears the current selection state (selected IDs, lasso, bounding box).
+     */
     const clearSelection = useCallback(() => {
         setSelectedIds([]);
         setSelectionLasso(null);
@@ -112,10 +133,23 @@ export default function Board({ shared = false }) {
         }
     }, []);
 
+    /**
+     * Callback invoked when another client edits a shape.
+     * If the edited shape is currently selected, clears the selection to
+     * prevent display of an outdated bounding box.
+     *
+     * @param {string} shapeId - The ID of the shape that was edited.
+     */
     const handleOtherClientEdit = useCallback((shapeId) => {
         if (selectedIdsRef.current.includes(shapeId)) clearSelection();
     }, [clearSelection]);
 
+    /**
+     * Sorts an array of line objects by their creation timestamp (parsed from ID).
+     *
+     * @param {Array} linesArray - The array of line objects to sort.
+     * @returns {Array} A new sorted array.
+     */
     const sortLinesByTime = (linesArray) => {
         return [...linesArray].sort((x, y) => {
             const timeX = parseInt(x.id.split('_')[0], 10);
@@ -157,7 +191,10 @@ export default function Board({ shared = false }) {
     const { isResizingRef, handleResizeStart, handleResizeDrag, handleResizeEnd } = useShapeResize({
         stageRef, linesRef, setLines, selectionBBoxRef, selectionBBoxRotation, setSelectionBBox, selectedIdsRef, setEditHistory, socketRef, setIsManipulating
     });
-
+    
+    /**
+     * Displays the zoom indicator and schedules its automatic dismissal after ZOOM_DISPLAY_TIME.
+     */
     const displayZoomMeter = useCallback(() => {
         setHasZoomed(true);
         if (zoomTimeoutRef.current) clearTimeout(zoomTimeoutRef.current);
@@ -223,6 +260,11 @@ export default function Board({ shared = false }) {
     }, [tool, clearSelection]);
 
     const activeSize = (tool === 'eraser') ? eraserSize : (tool === 'highlighter') ? highlighterSize : (tool === 'shape') ? shapeWidth : strokeWidth;
+    
+    /**
+     * Sets the active size for the current tool.
+     * @param {function} fn - A function that receives the current size and returns the new size.
+     */
     const setActiveSize = (fn) => {
         setIsOpenContextMenu(false);
         switch (toolRef.current) {
@@ -233,12 +275,20 @@ export default function Board({ shared = false }) {
             default: console.error("[SyncBoard] Unknown tool selected!");
         }
     };
+
+    /**
+     * Sets the color for the current tool (brush or highlighter).
+     * @param {string} fn - The new color hex value.
+     */
     const setColor = (fn) => {
         if (tool === 'highlighter') setHighlighterColor(fn)
         else setBrushColor(fn)
         setIsOpenContextMenu(false);
     };
 
+    /**
+     * Handles the exit action: saves a thumbnail of the board and navigates to the dashboard.
+     */
     const handleExitAndSaveThumbnail = () => {
         clearSelection();
         setTimeout(() => {
@@ -247,6 +297,12 @@ export default function Board({ shared = false }) {
         }, WAIT_BEFORE_EXIT);
     };
 
+    /**
+     * Handles the right-click context menu event on the stage.
+     * Records the pointer position in both world and screen coordinates.
+     *
+     * @param {object} e - The Konva event object.
+     */
     const handleContextMenuOpen = (e) => {
         e.evt.preventDefault();
         if (isManipulating || selectionBBox) return;

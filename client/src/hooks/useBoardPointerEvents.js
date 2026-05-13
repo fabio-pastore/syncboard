@@ -7,6 +7,107 @@ import {
     computeCircleData, lineIntersectsOrInsidePolygon, computeSelectionBBox 
 } from "../utils/boardUtils";
 
+/**
+ * Central hook for managing all pointer interactions on the Konva stage.
+ *
+ * This hook is the core interaction handler for the drawing board. It orchestrates
+ * all mouse, pen, and touch events on the stage, translating them into the appropriate
+ * actions based on the currently active tool (pen, highlighter, eraser, select, shape)
+ * and the user's input device.
+ *
+ * Key responsibilities include:
+ * - Drawing: Captures pointer/touch positions to create freehand lines or geometric
+ *   shapes (line, triangle, rectangle, circle). For pen input, it processes coalesced
+ *   events for high-fidelity strokes.
+ * - Erasing: On pointer down/move, finds intersected shapes and removes them.
+ * - Selection: Draws a lasso polygon to select multiple shapes, computing their
+ *   combined bounding box. Also initiates drag operations for existing selections.
+ * - Panning: Activated by middle mouse button or two-finger touch gestures,
+ *   updating the stage position and background pattern offset.
+ * - Zooming: Handles mouse wheel events, with Ctrl/Meta key for zoom (centered on
+ *   pointer) and plain wheel for panning.
+ * - Cursor broadcasting: Throttled emission of the local user's cursor position
+ *   to other collaborators via the socket connection.
+ * - Real-time line preview: For freehand drawing, emits incremental "tmp line"
+ *   updates to the server so other users see the stroke in real-time.
+ *
+ * The hook carefully distinguishes between pointer types (mouse, pen, touch) and
+ * touch modes (stylus mode vs. finger-draw mode) to provide appropriate behavior
+ * on different devices. It also coordinates with the resize, rotate, and drag
+ * manipulation hooks when the user is interacting with a selection box.
+ *
+ * @param {object} params - The complete set of required refs, state variables, and callbacks.
+ * @param {React.RefObject} params.stageRef - Ref to the Konva Stage instance.
+ * @param {React.MutableRefObject<string>} params.toolRef - Ref to the currently active tool ID ('pen', 'highlighter', 'eraser', 'select', 'shape').
+ * @param {React.MutableRefObject<string>} params.shapeRef - Ref to the active shape type ('line', 'triangle', 'rectangle', 'circle').
+ * @param {React.MutableRefObject<boolean>} params.isDrawingRef - Ref indicating if a drawing operation is in progress.
+ * @param {React.MutableRefObject<object|null>} params.activeLineDataRef - Ref holding the data model of the line currently being drawn.
+ * @param {React.RefObject} params.activeLineRef - Ref to the Konva Line shape used for freehand drawing preview.
+ * @param {React.RefObject} params.activeCircleStrokeRef - Ref to the Konva Circle shape used for circle stroke preview.
+ * @param {React.RefObject} params.activeCircleFillRef - Ref to the Konva Circle shape used for circle fill preview.
+ * @param {React.MutableRefObject<boolean>} params.isPanningRef - Ref indicating if the stage is currently being panned.
+ * @param {React.MutableRefObject<object>} params.panStartRef - Ref storing the starting {x, y} position of a pan gesture.
+ * @param {React.MutableRefObject<object>} params.stagePositionRef - Ref to the current {x, y} position of the stage.
+ * @param {React.MutableRefObject<string>} params.pointerTypeRef - Ref storing the active pointer type ('mouse', 'pen', 'touch').
+ * @param {React.MutableRefObject<boolean>} params.isPenActiveRef - Ref indicating if a pen/stylus is the active input device.
+ * @param {React.RefObject} params.selectionLassoRef - Ref to the Konva Line shape used for the selection lasso.
+ * @param {React.MutableRefObject<boolean>} params.touchDrawModeRef - Ref indicating if finger-draw mode is active on touch devices.
+ * @param {React.MutableRefObject<number>} params.lastCursorEmitRef - Ref storing the timestamp of the last cursor position emission.
+ * @param {React.MutableRefObject<number>} params.lastEmittedPointCountRef - Ref tracking how many points of a line have been emitted as deltas.
+ * @param {React.MutableRefObject<Array>} params.linesRef - Ref to the complete array of all line objects on the board.
+ * @param {React.MutableRefObject<Array<string>>} params.selectedIdsRef - Ref to the array of currently selected line IDs.
+ * @param {React.MutableRefObject<Array<number>|null>} params.selectionLassoDataRef - Ref holding the raw points of the selection lasso polygon.
+ * @param {React.MutableRefObject<object|null>} params.selectionBBoxRef - Ref to the current selection bounding box data.
+ * @param {React.RefObject} params.eraserCursorRef - Ref to a DOM element used as a custom eraser cursor.
+ * @param {boolean} params.canDraw - Whether the current user has permission to draw.
+ * @param {string} params.brushColor - The current brush color hex value.
+ * @param {string} params.highlighterColor - The current highlighter color hex value.
+ * @param {number} params.highlighterOpacity - The current highlighter opacity value.
+ * @param {number} params.strokeWidth - The pen stroke width.
+ * @param {number} params.highlighterSize - The highlighter stroke width.
+ * @param {number} params.shapeWidth - The shape stroke width.
+ * @param {string} params.shapeColor - The shape fill color.
+ * @param {string} params.shapeBorderColor - The shape border color.
+ * @param {boolean} params.fillShape - Whether shapes should be filled.
+ * @param {number} params.shapeFillOpacity - Opacity of the shape fill.
+ * @param {number} params.shapeBorderOpacity - Opacity of the shape border.
+ * @param {function} params.clearSelection - Callback to clear the current selection.
+ * @param {function} params.handleDragStart - Callback to start dragging the selection.
+ * @param {function} params.handleDragMove - Callback called during a selection drag move.
+ * @param {function} params.handleDragEnd - Callback called when a selection drag ends.
+ * @param {function} params.handleRotationDrag - Callback called during a rotation drag.
+ * @param {function} params.handleRotationEnd - Callback called when a rotation operation ends.
+ * @param {function} params.handleResizeDrag - Callback called during a resize drag.
+ * @param {function} params.handleResizeEnd - Callback called when a resize operation ends.
+ * @param {React.MutableRefObject<boolean>} params.isResizingRef - Ref indicating if a resize operation is in progress.
+ * @param {React.MutableRefObject<boolean>} params.isRotatingRef - Ref indicating if a rotation operation is in progress.
+ * @param {React.MutableRefObject<boolean>} params.isDraggingSelectionRef - Ref indicating if a selection drag is in progress.
+ * @param {function} params.setSelectionLasso - Sets the selection lasso points.
+ * @param {function} params.setSelectedIds - Sets the array of selected line IDs.
+ * @param {function} params.setSelectionBBox - Sets the selection bounding box.
+ * @param {function} params.setSelectionBBoxRotation - Sets the selection bounding box rotation angle.
+ * @param {function} params.setLines - Sets the complete lines array.
+ * @param {function} params.setEditHistory - Sets the undo/redo edit history.
+ * @param {React.MutableRefObject} params.socketRef - Ref to the active socket connection.
+ * @param {function} params.updateBackgroundStyle - Callback to update the CSS background pattern based on stage position/scale.
+ * @param {React.MutableRefObject<number>} params.scaleRef - Ref to the current stage zoom scale.
+ * @param {function} params.setScale - Sets the zoom scale state.
+ * @param {function} params.displayZoomMeter - Callback to show the zoom level indicator.
+ * @param {function} params.setIsOpenContextMenu - Sets the context menu open state.
+ * @param {function} params.setIsManipulating - Sets the global manipulating state.
+ * @param {React.MutableRefObject<number>} params.touchCountRef - Ref tracking the current number of active touch points.
+ * @param {number} params.lastUpdate - Timestamp of the last update.
+ * @param {function} params.setLastUpdate - Sets the last update timestamp.
+ * @param {number} params.eraserSize - The eraser size.
+ * @returns {object} An object containing the following event handlers, which should be bound to the Konva Stage:
+ *   - handlePointerDown: Handles pointer/touch down events.
+ *   - handlePointerMove: Handles pointer/touch move events.
+ *   - handlePointerUp: Handles pointer/touch up events.
+ *   - handlePointerEnter: Handles pointer enter events (shows eraser cursor if active).
+ *   - handlePointerLeave: Handles pointer leave events (hides eraser cursor, ends drawing).
+ *   - handleWheel: Handles mouse wheel events for zooming and panning.
+ */
+
 export default function useBoardPointerEvents({
     stageRef,
     toolRef,
@@ -72,6 +173,12 @@ export default function useBoardPointerEvents({
     eraserSize
 }) {
 
+    /**
+     * Handles the pointer down event on the stage.
+     * Initiates drawing, erasing, selection, or panning based on the active tool and button pressed.
+     *
+     * @param {object} e - The Konva event object.
+     */
     const handlePointerDown = useCallback((e) => {
         setIsOpenContextMenu(false);
         if (isPanningRef.current) return;
@@ -231,6 +338,12 @@ export default function useBoardPointerEvents({
         }
     }, [canDraw, brushColor, highlighterColor, highlighterOpacity, strokeWidth, highlighterSize, shapeWidth, shapeColor, shapeBorderColor, fillShape, shapeFillOpacity, shapeBorderOpacity, clearSelection, handleDragStart]);
 
+    /**
+     * Handles the pointer move event on the stage.
+     * Manages cursor updates, panning, active drawing/erasing, and shape manipulation.
+     *
+     * @param {object} e - The Konva event object.
+     */
     const handlePointerMove = useCallback((e) => {
         const stage = stageRef.current;
         const pointerPos = stage.getPointerPosition();
@@ -400,6 +513,13 @@ export default function useBoardPointerEvents({
         }
     }, [canDraw, handleResizeDrag, handleRotationDrag, handleDragMove, isResizingRef, isRotatingRef, isDraggingSelectionRef]);
 
+     /**
+     * Handles the pointer up event on the stage.
+     * Finalizes drawing operations, completes selection lasso, ends pan/drag/rotate/resize,
+     * and emits the final line data to the server.
+     *
+     * @param {object} e - The Konva event object.
+     */
     const handlePointerUp = useCallback((e) => {
         if (isResizingRef.current) {
             handleResizeEnd();
@@ -498,17 +618,31 @@ export default function useBoardPointerEvents({
         socketRef.current?.emit('board:draw:line', finishedLine);
     }, [clearSelection, handleRotationEnd, handleResizeEnd, handleDragEnd, isResizingRef, isRotatingRef, isDraggingSelectionRef]);
 
+    /**
+     * Handles the pointer entering the stage area.
+     * Shows the custom eraser cursor if the eraser tool is active.
+     */
     const handlePointerEnter = useCallback(() => {
         if (eraserCursorRef.current && toolRef.current === 'eraser') {
             eraserCursorRef.current.style.display = 'block';
         }
     }, []);
 
+    /**
+     * Handles the pointer leaving the stage area.
+     * Hides the custom eraser cursor and calls handlePointerUp to clean up any in-progress interactions.
+     */
     const handlePointerLeave = useCallback(() => {
         if (eraserCursorRef.current) eraserCursorRef.current.style.display = 'none';
         handlePointerUp();
     }, [handlePointerUp]);
 
+    /**
+     * Handles the mouse wheel event on the stage.
+     * Zooms in/out when the Ctrl or Meta key is held, otherwise pans the stage.
+     *
+     * @param {object} e - The Konva event object.
+     */
     const handleWheel = useCallback((e) => {
         e.evt.preventDefault();
         const stage = stageRef.current;

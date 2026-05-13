@@ -1,6 +1,25 @@
 import { Line, Circle, Group } from "react-konva";
 import { computeCircleData } from "../../utils/boardUtils";
 
+/**
+ * Renders the collection of drawing lines on the board.
+ *
+ * Handles the visual representation of both unselected and selected lines,
+ * including special rendering for circle shapes. Selected lines are displayed
+ * with a highlight stroke. The component also provides refs for the active
+ * drawing line, circles, and selection lasso to allow performance-optimized
+ * updates from the parent.
+ *
+ * @param {object} props - Component props.
+ * @param {Array} props.lines - All line objects to render.
+ * @param {Array<string>} props.selectedIds - IDs of currently selected lines.
+ * @param {React.RefObject} props.activeLineRef - Ref for the active Line shape.
+ * @param {React.RefObject} props.activeCircleFillRef - Ref for the active Circle fill shape.
+ * @param {React.RefObject} props.activeCircleStrokeRef - Ref for the active Circle stroke shape.
+ * @param {React.RefObject} props.selectionLassoRef - Ref for the selection lasso Line.
+ * @returns {JSX.Element} A React.Fragment containing Konva shapes.
+ */
+
 export default function DrawingLines({
     lines, selectedIds,
     activeLineRef, activeCircleFillRef, activeCircleStrokeRef,

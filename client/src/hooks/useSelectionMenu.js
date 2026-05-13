@@ -1,5 +1,24 @@
 import { useMemo } from "react";
 
+/**
+ * Calculates the visibility and screen position for the selection context menu.
+ *
+ * The menu is positioned just above the topmost point of the selection bounding box,
+ * taking into account the box's rotation angle. The position is clamped to stay
+ * within the viewport bounds. The menu is only visible when there is an active
+ * selection and the user is not currently manipulating (dragging, resizing, rotating) it.
+ *
+ * @param {object} params - Hook parameters.
+ * @param {Array<string>} params.selectedIds - The array of currently selected line IDs.
+ * @param {object|null} params.selectionBBox - The selection bounding box data, including globalCenterX/Y, width, height.
+ * @param {number} params.selectionBBoxRotation - The rotation angle of the selection box in degrees.
+ * @param {boolean} params.isManipulating - Whether a manipulation action is in progress.
+ * @param {React.RefObject} params.stageRef - Ref to the Konva Stage instance.
+ * @returns {object} An object containing:
+ *   - `selectionMenuVisible` {boolean}: Whether the context menu should be displayed.
+ *   - `selectionMenuPosition` {object}: The {x, y} screen coordinates for the menu.
+ */
+
 export default function useSelectionMenu({
     selectedIds,
     selectionBBox,

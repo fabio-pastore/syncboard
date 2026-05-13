@@ -1,6 +1,28 @@
 import { ArrowLeft, Users, Share2 } from "lucide-react";
 import UserEntry from "./UserEntry";
 
+/**
+ * The top header bar of the board page.
+ *
+ * Displays the board name, a back/exit button, the number of connected peers,
+ * and a share button. It also manages a dropdown list of connected users and
+ * indicates if the current user has a 'viewer' role.
+ *
+ * @param {object} props - Component props.
+ * @param {object} props.board - The board data object.
+ * @param {string} props.role - The current user's role for this board.
+ * @param {boolean} props.shared - If the board is accessed via a share link.
+ * @param {number} props.peers - The number of connected peers.
+ * @param {Array} props.peerEntries - Array of connected peer user objects.
+ * @param {object} props.user - The current user object.
+ * @param {boolean} props.showPeers - Whether the peers dropdown is visible.
+ * @param {function} props.setShowPeers - Toggles the peers dropdown visibility.
+ * @param {function} props.onExit - Callback for the exit/back button click.
+ * @param {function} props.onShare - Callback for the share button click.
+ * @param {function} props.setIsOpenContextMenu - Callback to manage context menu state.
+ * @returns {JSX.Element} The header bar component.
+ */
+
 export default function HeaderBar({ board, role, shared, peers, peerEntries, user, showPeers, setShowPeers, onExit, onShare, setIsOpenContextMenu }) {
     return (
         <header className="fixed top-2 left-2 right-2 flex items-center z-10 pointer-events-none">

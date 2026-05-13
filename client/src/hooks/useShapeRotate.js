@@ -2,6 +2,33 @@ import { useRef, useCallback } from "react";
 import { NUM_MAX_UNDO, UPDATE_INTERVAL } from "../utils/boardConstants";
 import { rotatePoint } from "../utils/boardUtils";
 
+/**
+ * Manages the rotation of selected shapes on the board via the rotation handle.
+ *
+ * Handles the start, move, and end phases of a rotation operation on the current
+ * selection. Calculates the rotation delta from the pointer angle relative to the
+ * selection's center, applies the rotation to all selected lines, and throttles
+ * socket emissions for collaborative previews. Records the rotation in the edit
+ * history for undo/redo.
+ *
+ * @param {object} params - Hook parameters.
+ * @param {React.RefObject} params.stageRef - Ref to the Konva Stage instance.
+ * @param {React.MutableRefObject<Array>} params.linesRef - Ref to the current lines array.
+ * @param {function} params.setLines - Sets the complete lines array.
+ * @param {React.MutableRefObject<object|null>} params.selectionBBoxRef - Ref to the selection bounding box.
+ * @param {number} params.selectionBBoxRotation - The current rotation angle of the selection box.
+ * @param {function} params.setSelectionBBoxRotation - Sets the selection box rotation angle.
+ * @param {React.MutableRefObject<Array<string>>} params.selectedIdsRef - Ref to the array of selected line IDs.
+ * @param {function} params.setEditHistory - Sets the edit history state.
+ * @param {React.MutableRefObject} params.socketRef - Ref to the active socket connection.
+ * @param {function} params.setIsManipulating - Sets the global manipulating state.
+ * @returns {object} An object containing:
+ *   - isRotatingRef {React.MutableRefObject<boolean>}: Ref tracking if a rotation operation is active.
+ *   - handleRotationStart {function}: Initiates the rotation operation.
+ *   - handleRotationDrag {function}: Updates angles during the rotation.
+ *   - handleRotationEnd {function}: Finalizes the rotation and records it in history.
+ */
+
 export default function useShapeRotate({
     stageRef,
     linesRef,
@@ -20,6 +47,14 @@ export default function useShapeRotate({
     const linesBeforeRotateRef = useRef([]);
     const lastTmpRotateEmitRef = useRef(0);
 
+    /**
+     * Begins the rotation operation.
+     * Calculates the initial angle from the pointer to the selection center and captures
+     * the initial state of all selected lines.
+     *
+     * @param {object} pointerPos - The current pointer {x, y} position.
+     * @param {number} pointerScale - The current stage scale.
+     */
     const handleRotationStart = useCallback((pointerPos, pointerScale) => { 
         const currSelectionBBox = selectionBBoxRef.current;
         if (!currSelectionBBox) return;
@@ -38,6 +73,15 @@ export default function useShapeRotate({
         linesBeforeRotateRef.current = linesRef.current.map(l => ({...l, points: [...l.points]}));
     }, [stageRef, selectionBBoxRef, selectionBBoxRotation, linesRef, setIsManipulating]);
 
+    /**
+     * Handles the movement during a rotation drag.
+     * Calculates the delta angle from the initial drag position, updates the rotation
+     * of the selection box, and applies the rotation to all selected shapes around the
+     * selection's center point.
+     *
+     * @param {object} pointerPos - The current pointer {x, y} position.
+     * @param {number} pointerScale - The current stage scale.
+     */
     const handleRotationDrag = useCallback((pointerPos, pointerScale) => {
         const currBBox = selectionBBoxRef.current;
         if (!currBBox) return;
@@ -94,6 +138,11 @@ export default function useShapeRotate({
         }
     }, [stageRef, selectionBBoxRef, selectedIdsRef, setSelectionBBoxRotation, setLines, socketRef, linesRef]);
 
+    /**
+     * Ends the rotation operation.
+     * Compares the final state against the initial state and records a 'rotate' operation
+     * in the edit history if any lines actually rotated. Emits final positions to collaborators.
+     */
     const handleRotationEnd = useCallback(() => {
         isRotatingRef.current = false;
         setIsManipulating(false);

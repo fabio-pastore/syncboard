@@ -2,6 +2,37 @@ import { useRef, useCallback } from "react";
 import { NUM_MAX_UNDO, UPDATE_INTERVAL, HANDLE_BOTTOM_RIGHT, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT, HANDLE_BOTTOM_LEFT, HANDLE_TOP, HANDLE_RIGHT, HANDLE_BOTTOM, HANDLE_LEFT } from "../utils/boardConstants";
 import { rotatePoint, computeCircleData } from "../utils/boardUtils";
 
+/**
+ * Manages the resizing of selected shapes on the board via drag handles.
+ *
+ * Handles the start, move, and end phases of a resize operation on the current
+ * selection. Supports proportional corner resizing, edge/center resizing, and
+ * special handling for circle shapes. Updates the positions and dimensions of
+ * all selected lines in real-time, throttles socket emissions for collaborative
+ * previews, and records the resize in the edit history for undo/redo.
+ *
+ * The resize logic operates in the selection box's local coordinate space
+ * (accounting for its rotation) to provide intuitive handle behavior regardless
+ * of the current selection angle.
+ *
+ * @param {object} params - Hook parameters.
+ * @param {React.RefObject} params.stageRef - Ref to the Konva Stage instance.
+ * @param {React.MutableRefObject<Array>} params.linesRef - Ref to the current lines array.
+ * @param {function} params.setLines - Sets the complete lines array.
+ * @param {React.MutableRefObject<object|null>} params.selectionBBoxRef - Ref to the selection bounding box.
+ * @param {number} params.selectionBBoxRotation - The current rotation angle of the selection box.
+ * @param {function} params.setSelectionBBox - Sets the selection bounding box.
+ * @param {React.MutableRefObject<Array<string>>} params.selectedIdsRef - Ref to the array of selected line IDs.
+ * @param {function} params.setEditHistory - Sets the edit history state.
+ * @param {React.MutableRefObject} params.socketRef - Ref to the active socket connection.
+ * @param {function} params.setIsManipulating - Sets the global manipulating state.
+ * @returns {object} An object containing:
+ *   - isResizingRef {React.MutableRefObject<boolean>}: Ref tracking if a resize operation is active.
+ *   - handleResizeStart {function}: Initiates the resize operation from a specific handle.
+ *   - handleResizeDrag {function}: Updates shape dimensions during the resize.
+ *   - handleResizeEnd {function}: Finalizes the resize and records it in history.
+ */
+
 export default function useShapeResize({
     stageRef,
     linesRef,
@@ -21,6 +52,13 @@ export default function useShapeResize({
     const initialBoxRotRef = useRef(0);
     const lastTmpResizeEmitRef = useRef(0);
 
+    /**
+     * Begins the resize operation.
+     * Captures the initial state of the selection box and all selected lines for history purposes.
+     *
+     * @param {object} e - The Konva event object.
+     * @param {string} current_handle - The ID of the resize handle being dragged (e.g., 'top-left', 'bottom-right').
+     */
     const handleResizeStart = useCallback((e, current_handle) => {
         e.cancelBubble = true;
         e.evt.preventDefault();
@@ -32,6 +70,15 @@ export default function useShapeResize({
         initialBoxRotRef.current = selectionBBoxRotation || 0;
     }, [selectionBBoxRotation, linesRef, selectionBBoxRef, setIsManipulating]);
 
+    /**
+     * Handles the movement during a resize drag.
+     * Calculates the new scale factors based on the handle being dragged and the pointer position,
+     * applies the transformation to all selected lines, and updates the selection bounding box.
+     * Throttled socket emissions for real-time collaborative previews.
+     *
+     * @param {object} pointerPos - The current pointer {x, y} position.
+     * @param {number} pointerScale - The current stage scale.
+     */
     const handleResizeDrag = useCallback((pointerPos, pointerScale) => {
         const stage = stageRef.current;
         const handle = activeResizeHandleRef.current;
@@ -306,6 +353,11 @@ export default function useShapeResize({
         }
     }, [stageRef, selectedIdsRef, setSelectionBBox, setLines, socketRef]);
 
+    /**
+     * Ends the resize operation.
+     * Compares the final state against the initial state and records a 'resize' operation
+     * in the edit history if any lines actually changed. Emits final positions to collaborators.
+     */
     const handleResizeEnd = useCallback(() => {
         const resizedLinesPairs = selectedIdsRef.current.map(id => {
             const newLineData = linesRef.current?.find(l => l.id === id);

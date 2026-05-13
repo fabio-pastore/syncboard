@@ -5,6 +5,51 @@ import LocalColorPicker from "./LocalColorPicker";
 import { PRESET_COLORS } from "../../utils/boardConstants";
 import { getContrastColor } from "../../utils/boardUtils";
 
+/**
+ * The main drawing toolbar component.
+ *
+ * Provides tools for pen, highlighter, eraser, selection, and shapes. Includes
+ * controls for color, stroke width, shape type, fill, opacity, and undo/redo.
+ * Adapts its layout and available options for mobile/touch devices.
+ *
+ * @param {object} props - Component props.
+ * @param {string} props.tool - The currently active tool ID.
+ * @param {function} props.setTool - Sets the active tool.
+ * @param {string} props.shape - The currently selected shape type.
+ * @param {function} props.setShape - Sets the selected shape.
+ * @param {string} props.brushColor - The current brush color.
+ * @param {string} props.highlighterColor - The current highlighter color.
+ * @param {function} props.setColor - Sets the brush/highlighter color.
+ * @param {number} props.activeSize - The current active size (pen size, etc.).
+ * @param {function} props.setActiveSize - Sets the active size.
+ * @param {number} props.strokeWidth - Pen stroke width.
+ * @param {number} props.highlighterSize - Highlighter stroke width.
+ * @param {number} props.eraserSize - Eraser size.
+ * @param {number} props.shapeWidth - Shape stroke width.
+ * @param {number} props.highlighterOpacity - Highlighter opacity value.
+ * @param {function} props.setHighlighterOpacity - Sets the highlighter opacity.
+ * @param {boolean} props.selectedShapeMenu - Whether the shape submenu is open.
+ * @param {function} props.setSelectedShapeMenu - Toggles the shape submenu.
+ * @param {boolean} props.selectedHighlighterMenu - Whether the highlighter submenu is open.
+ * @param {function} props.setSelectedHighlighterMenu - Toggles the highlighter submenu.
+ * @param {string} props.shapeBorderColor - Shape border color.
+ * @param {function} props.setShapeBorderColor - Sets the shape border color.
+ * @param {string} props.shapeColor - Shape fill color.
+ * @param {function} props.setShapeColor - Sets the shape fill color.
+ * @param {number} props.shapeBorderOpacity - Shape border opacity.
+ * @param {function} props.setShapeBorderOpacity - Sets the shape border opacity.
+ * @param {number} props.shapeFillOpacity - Shape fill opacity.
+ * @param {function} props.setShapeFillOpacity - Sets the shape fill opacity.
+ * @param {boolean} props.fillShape - Whether to fill shapes.
+ * @param {function} props.setFillShape - Toggles shape fill.
+ * @param {object} props.editHistory - The current undo/redo history state.
+ * @param {function} props.handleUndo - Callback for the undo action.
+ * @param {function} props.handleRedo - Callback for the redo action.
+ * @param {boolean} props.touchDrawMode - Whether finger-draw mode is active on touch devices.
+ * @param {function} props.setTouchDrawMode - Toggles finger-draw mode.
+ * @returns {JSX.Element} The toolbar component.
+ */
+
 export default function Toolbar({
     tool, setTool,
     shape, setShape,
@@ -23,6 +68,11 @@ export default function Toolbar({
     touchDrawMode, setTouchDrawMode,
 }) {
     const [selectedColorMenu, setSelectedColorMenu] = useState(false);
+
+    /**
+     * Detects whether the current device has a coarse pointer (touch) and no fine pointer.
+     * @type {boolean}
+     */
     const isTouchDevice = useMemo(() => {
     if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
         return true;
@@ -35,11 +85,18 @@ export default function Toolbar({
     return hasTouchEvents && !hasFinePointer;
 }, []);
 
+    /**
+     * Sets the active color and closes the color menu.
+     * @param {string} c - The selected color hex value.
+     */
     const handleColorSelect = (c) => {
         setColor(c);
         setSelectedColorMenu(false);
     };
 
+    /**
+     * Closes all open submenus (shape, highlighter, color).
+     */
     const closeAllMenus = () => {
         setSelectedShapeMenu(false);
         setSelectedHighlighterMenu(false);

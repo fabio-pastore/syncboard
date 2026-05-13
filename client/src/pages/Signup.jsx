@@ -2,6 +2,17 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+/**
+ * The signup page component.
+ *
+ * Provides a form for new users to create an account with email, username, and
+ * password. On successful signup, automatically logs the user in and redirects
+ * to the dashboard. Displays error messages for failed attempts and a loading
+ * spinner during the registration process.
+ *
+ * @returns {JSX.Element} The signup page.
+ */
+
 export default function Signup() {
     const [email, setEmail] = useState('');
     const [username, setUsername] = useState('');
@@ -11,6 +22,13 @@ export default function Signup() {
     const { signup } = useAuth();
     const navigate = useNavigate();
 
+    /**
+     * Handles the signup form submission.
+     * Creates a new account and logs the user in.
+     *
+     * @param {Event} e - The form submit event.
+     * @returns {Promise<void>}
+     */
     async function handleSubmit(e) {
         e.preventDefault();
         setError('');
@@ -29,6 +47,7 @@ export default function Signup() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-white px-4">
 
+            {/* Decorative background blurs */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute -top-40 -left-40 w-96 h-96 bg-violet-100 rounded-full blur-3xl opacity-40" />
                 <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-violet-50 rounded-full blur-3xl opacity-50" />
@@ -36,6 +55,7 @@ export default function Signup() {
 
             <div className="w-full max-w-sm relative z-10">
 
+                {/* Logo and Tagline */}
                 <div className="text-center mb-8">
                     <Link to="/" className="text-3xl font-semibold select-none">
                         <span className="text-violet-600">Sync</span>
@@ -44,7 +64,7 @@ export default function Signup() {
                     <p className="text-gray-400 text-sm mt-2">Start collaborating on a shared canvas.</p>
                 </div>
 
-                {/* Card */}
+                {/* Signup Form Card */}
                 <form
                     onSubmit={handleSubmit}
                     className="w-full flex flex-col gap-5 bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"

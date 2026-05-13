@@ -1,5 +1,17 @@
 import { Search } from "lucide-react";
 
+/**
+ * Displays the current zoom level as a percentage.
+ *
+ * Fades in when the user has zoomed and fades out when the scale is back to 100%.
+ * Positioned at the bottom-left of the screen.
+ *
+ * @param {object} props - Component props.
+ * @param {number} props.scale - The current zoom scale of the stage.
+ * @param {boolean} props.hasZoomed - Whether the user has zoomed away from 100%.
+ * @returns {JSX.Element} The zoom indicator UI.
+ */
+
 export default function ZoomIndicator({ scale, hasZoomed }) {
     return (
         <div 

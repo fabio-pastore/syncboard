@@ -4,6 +4,14 @@ import Konva from "konva";
 import { apiFetch } from "../api";
 import { getSmallestRectangle } from "../utils/boardUtils";
 
+/**
+ * Adds a temporary white background rectangle to a Konva layer.
+ * Used during export to ensure transparent drawings have a solid background.
+ *
+ * @param {Konva.Layer} layer - The Konva layer to add the background to.
+ * @param {object} box - The bounding box {x, y, width, height} for the background.
+ * @returns {Konva.Rect} The created background rectangle.
+ */
 function addTempBG(layer, box) {
     const bg = new Konva.Rect({
         x: box.x,
@@ -17,7 +25,33 @@ function addTempBG(layer, box) {
     return bg;
 }
 
+/**
+ * Manages board export operations (PNG, PDF) and thumbnail generation/saving.
+ *
+ * Provides callbacks to export the current board content as a PNG or PDF image,
+ * capturing only the area containing drawings. Also handles generation of a
+ * 4:3 thumbnail image and saving it to the server for dashboard previews.
+ *
+ * @param {object} params - Hook parameters.
+ * @param {React.RefObject} params.stageRef - Ref to the Konva Stage instance.
+ * @param {React.MutableRefObject<Array>} params.linesRef - Ref to the current lines array.
+ * @param {Array} params.lines - The current lines array (state).
+ * @param {object} params.board - The current board data object.
+ * @param {string} params.id - The board ID.
+ * @param {boolean} params.shared - Whether the board is accessed via a share link.
+ * @param {string} params.bgColor - The current background color.
+ * @param {string} params.bgPattern - The current background pattern ID.
+ * @returns {object} An object containing:
+ *   - `exportToPng`: Exports the board as a PNG file.
+ *   - `exportToPDF`: Exports the board as a PDF file.
+ *   - `saveThumbnail`: Generates and saves a thumbnail to the server.
+ */
+
 export default function useExport({ stageRef, linesRef, lines, board, id, shared, bgColor, bgPattern }) {
+    /**
+     * Exports the current board content as a PNG image file.
+     * Triggers a download in the browser. Does nothing if there are no lines to export.
+     */
     const exportToPng = useCallback(() => {
         if (!lines.length) return;
         const box = getSmallestRectangle(lines);
@@ -43,6 +77,11 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         stageRef.current.scale(oldScale);
     }, [lines, board, stageRef]);
 
+    /**
+     * Exports the current board content as a PDF file.
+     * Uses jsPDF to create the document sized to fit the drawing bounding box.
+     * Does nothing if there are no lines to export.
+     */
     const exportToPDF = useCallback(() => {
         if (!lines.length) return;
         const box = getSmallestRectangle(lines);
@@ -68,6 +107,13 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         stageRef.current.scale(oldScale);
     }, [lines, board, stageRef]);
 
+    /**
+     * Generates a thumbnail data URL of the board content.
+     * Captures a 4:3 aspect ratio viewport, includes background pattern lines if active.
+     *
+     * @param {number} [mw=400] - The max width of the thumbnail in pixels.
+     * @returns {string|null} The base64 data URL of the thumbnail image, or null if there's no content.
+     */
     const generateThumbnail = useCallback((mw = 400) => {
         const stage = stageRef.current;
         if (!stage || !linesRef?.current.length) return null;
@@ -151,6 +197,10 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         return dataUrl;
     }, [stageRef, linesRef, bgColor, bgPattern]);
 
+    /**
+     * Generates a thumbnail of the board and saves it to the server via API.
+     * Only executes if the board has content and is not a shared view.
+     */
     const saveThumbnail = useCallback(async () => {
         if (!lines.length || !stageRef.current || shared) return;
         const dataUrl = generateThumbnail(400);

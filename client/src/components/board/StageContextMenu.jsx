@@ -2,6 +2,26 @@ import { useState } from 'react';
 import { ClipboardPaste, Image, ChevronRight, Check } from 'lucide-react';
 import LocalColorPicker from './LocalColorPicker';
 
+/**
+ * A context menu that appears on right-click in an empty area of the stage.
+ *
+ * Provides options to paste copied elements, change the background pattern
+ * (none, grid, lines), and set the background color of the board.
+ *
+ * @param {object} props - Component props.
+ * @param {boolean} props.visible - Whether the menu is displayed.
+ * @param {boolean} props.disabled - If true, certain actions like paste are disabled.
+ * @param {object} props.position - The {x, y} screen position for the menu.
+ * @param {function} props.onPaste - Callback to trigger the paste action.
+ * @param {function} props.onClose - Callback to close the menu.
+ * @param {boolean} props.canModifyBackground - Whether the user has permission to modify the background.
+ * @param {string} [props.currentBackground='none'] - The currently active background pattern ID.
+ * @param {function} props.onBackgroundChange - Callback when a new background pattern is selected.
+ * @param {string} [props.currentBgColor='#ffffff'] - The current background color.
+ * @param {function} props.onBgColorChange - Callback when the background color is changed.
+ * @returns {JSX.Element|null} The stage context menu, or null if not visible.
+ */
+
 export default function StageContextMenu({ 
     visible, 
     disabled, 

@@ -9,6 +9,17 @@ import Dashboard from './pages/Dashboard';
 import Board from './pages/Board';
 import LoadingScreen from './components/LoadingScreen';
 
+/**
+ * The root application component.
+ *
+ * Defines the main routing structure for the application, including
+ * public, protected, and catch-all routes. It redirects authenticated users
+ * away from login/signup pages and to the dashboard. A full-screen loading
+ * indicator is displayed while the authentication state is being resolved.
+ *
+ * @returns {JSX.Element} The application routes wrapped in a React.Fragment.
+ */
+
 export default function App() {
   const { user, loading: authLoading } = useAuth();
 

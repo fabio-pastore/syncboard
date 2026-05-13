@@ -2,6 +2,22 @@ import { Group, Rect, Line, Circle, Path } from "react-konva";
 import { SELECTION_BOX_COLOR, RESIZE_HANDLE_WH, HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT, HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT } from "../../utils/boardConstants";
 import { getDynamicCursor } from "../../utils/boardUtils";
 
+/**
+ * Renders a selection box with resize and rotation handles around selected shapes.
+ *
+ * Displays a dashed rectangle, eight resize handles, and a top-mounted rotation
+ * handle. All handles are positioned and interacted with in screen-space coordinates.
+ *
+ * @param {object} props - Component props.
+ * @param {object|null} props.selectionBBox - Bounding box data for the selection.
+ * @param {number} props.selectionBBoxRotation - The rotation angle of the selection box in degrees.
+ * @param {function} props.handleResizeStart - Callback fired when a resize handle is activated.
+ * @param {function} props.handleRotationStart - Callback fired when the rotation handle is activated.
+ * @param {function} props.setIsManipulating - Sets the global manipulating state.
+ * @param {React.RefObject} props.stageRef - Ref to the Konva Stage.
+ * @returns {JSX.Element|null} The selection box Konva Group, or null if no bounding box.
+ */
+
 export default function SelectionBox({
     selectionBBox, selectionBBoxRotation,
     handleResizeStart, handleRotationStart,

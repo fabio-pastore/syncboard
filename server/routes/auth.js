@@ -6,6 +6,21 @@ const User = require('../models/Users.js');
 const router = express.Router();
 const SALT_ROUNDS = 10;
 
+/**
+ * POST /api/auth/signup
+ *
+ * Registers a new user account. Validates that all required fields are provided,
+ * checks for existing users with the same email or username, hashes the password
+ * with bcrypt, creates the user document in MongoDB, and returns a JWT token
+ * along with the user profile data.
+ *
+ * @name POST /api/auth/signup
+ * @function
+ * @param {string} email - The user's email address.
+ * @param {string} username - The desired username.
+ * @param {string} password - The user's password (minimum 6 characters).
+ * @returns {object} JSON with `token` and `user` object ({id, email, username, profileImage}).
+ */
 router.post('/signup', async (req, res) => {
     try {
         const { email, username, password } = req.body;
@@ -44,6 +59,19 @@ router.post('/signup', async (req, res) => {
     }
 });
 
+/**
+ * POST /api/auth/login
+ *
+ * Authenticates an existing user by email or username and password. Looks up
+ * the user by the provided identifier, compares the password using bcrypt,
+ * and returns a JWT token along with the user profile data on success.
+ *
+ * @name POST /api/auth/login
+ * @function
+ * @param {string} identifier - The user's email or username.
+ * @param {string} password - The user's password.
+ * @returns {object} JSON with `token` and `user` object ({id, email, username, profileImage}).
+ */
 router.post('/login', async (req, res) => {
     try {
         const { identifier, password } = req.body; 

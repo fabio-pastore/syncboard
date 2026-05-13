@@ -1,6 +1,13 @@
 import { HANDLE_BOTTOM, HANDLE_BOTTOM_LEFT, HANDLE_BOTTOM_RIGHT, HANDLE_LEFT,
          HANDLE_RIGHT, HANDLE_TOP, HANDLE_TOP_LEFT, HANDLE_TOP_RIGHT } from "../utils/boardConstants";
 
+/**
+ * Converts a hex color and opacity value to an rgba string.
+ *
+ * @param {string} hex - The hex color string (e.g., '#ff0000').
+ * @param {number} opacity - The opacity value between 0 and 1.
+ * @returns {string} An rgba color string (e.g., 'rgba(255, 0, 0, 0.5)').
+ */         
 export const hexToRgba = (hex, opacity) => {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
@@ -8,6 +15,13 @@ export const hexToRgba = (hex, opacity) => {
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 };
 
+/**
+ * Converts an rgba or hex color string to a 6-digit hex string.
+ * Returns undefined if conversion fails.
+ *
+ * @param {string} colorStr - The color string (hex or rgba).
+ * @returns {string|undefined} The 6-digit hex string, or undefined.
+ */
 export const RgbaToHex = (colorStr) => {
     if (!colorStr) return undefined;
     
@@ -29,6 +43,13 @@ export const RgbaToHex = (colorStr) => {
     return undefined; // in case conversion fails
 };
 
+/**
+ * Calculates the relative luminance of a hex color.
+ * Values > 128 are considered "light", values < 128 are "dark".
+ *
+ * @param {string} hex - The hex color string (e.g., '#ffffff').
+ * @returns {number} The luminance value (0-255).
+ */
 export const calculateLuminosity = (hex) => { 
     if (!hex) return;
 
@@ -44,6 +65,14 @@ export const calculateLuminosity = (hex) => {
     return (R_COEFF * r + G_COEFF * g + B_COEFF * b); 
 }
 
+/**
+ * Smooths a polyline by averaging adjacent points over a specified number of iterations.
+ * Uses 4-point averaging for interior points, leaving endpoints fixed.
+ *
+ * @param {Array<number>} pts - The flat array of points [x1, y1, x2, y2, ...].
+ * @param {number} [iterations=2] - The number of smoothing passes.
+ * @returns {Array<number>} The smoothed flat point array.
+ */
 export function smoothPoints(pts, iterations = 2) {
     if (pts.length < 6) return pts;
     let smoothed = [...pts];
@@ -61,6 +90,15 @@ export function smoothPoints(pts, iterations = 2) {
     return smoothed;
 }
 
+/**
+ * Computes the three vertices of an equilateral triangle given a peak and a base reference point.
+ *
+ * @param {number} xPeak - X coordinate of the triangle peak.
+ * @param {number} yPeak - Y coordinate of the triangle peak.
+ * @param {number} xBase - X coordinate of the base reference point.
+ * @param {number} yBase - Y coordinate of the base reference point.
+ * @returns {Array<number>} Flat array [peakX, peakY, leftX, leftY, rightX, rightY].
+ */
 export const computeTrianglePoints = (xPeak, yPeak, xBase, yBase) => {
     const dx = xBase - xPeak;
     const dy = yBase - yPeak;
@@ -76,10 +114,25 @@ export const computeTrianglePoints = (xPeak, yPeak, xBase, yBase) => {
     return [xPeak, yPeak, xLeft, yLeft, xRight, yRight];
 };
 
+/**
+ * Computes the four corners of a rectangle from two opposite corners.
+ *
+ * @param {number} x1 - X coordinate of the first corner.
+ * @param {number} y1 - Y coordinate of the first corner.
+ * @param {number} x2 - X coordinate of the opposite corner.
+ * @param {number} y2 - Y coordinate of the opposite corner.
+ * @returns {Array<number>} Flat array [x1, y1, x2, y1, x2, y2, x1, y2].
+ */
 export const computeRectanglePoints = (x1, y1, x2, y2) => {
     return [x1, y1, x2, y1, x2, y2, x1, y2];
 };
 
+/**
+ * Extracts the center and radius of a circle from its point data.
+ *
+ * @param {Array<number>} points - Flat array [cx, cy, edgeX, edgeY] where (cx, cy) is the center.
+ * @returns {object} An object with `x_center`, `y_center`, and `radius` properties.
+ */
 export const computeCircleData = (points) => {
     if (points.length < 4)
         return { x: 0, y: 0, radius: 0 };
@@ -90,6 +143,13 @@ export const computeCircleData = (points) => {
     return { x_center: x1, y_center: y1, radius };
 };
 
+/**
+ * Calculates the axis-aligned bounding box that minimally encloses all given lines.
+ *
+ * @param {Array} lines - Array of line objects.
+ * @param {function} [computeCircleDataFn=computeCircleData] - Function to compute circle data.
+ * @returns {object} The bounding box {x, y, width, height} with padding.
+ */
 export function getSmallestRectangle(lines, computeCircleDataFn = computeCircleData) { // parameter passing cursed by Tutankhamon in 1320 B.C.
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const line of lines) {
@@ -119,6 +179,12 @@ export function getSmallestRectangle(lines, computeCircleDataFn = computeCircleD
     };
 }
 
+/**
+ * Determines whether black or white provides better contrast against a given hex color.
+ *
+ * @param {string} hexColor - The background hex color.
+ * @returns {string} 'black' or 'white'.
+ */
 export const getContrastColor = (hexColor) => {
     if (!hexColor) return 'white';
     const hex = hexColor.replace('#', '');
@@ -129,6 +195,14 @@ export const getContrastColor = (hexColor) => {
     return brightness > 128 ? 'black' : 'white';
 };
 
+/**
+ * Tests if a point is inside a polygon using a ray-casting algorithm.
+ *
+ * @param {number} x - X coordinate of the point.
+ * @param {number} y - Y coordinate of the point.
+ * @param {Array<number>} polygon - Flat array of polygon vertices [x1, y1, x2, y2, ...].
+ * @returns {boolean} True if the point is inside the polygon.
+ */
 export function pointInPolygon(x, y, polygon) {
     let inside = false;
     for (let i = 0, j = polygon.length - 2; i < polygon.length; j = i, i += 2) {
@@ -139,6 +213,19 @@ export function pointInPolygon(x, y, polygon) {
     return inside;
 }
 
+/**
+ * Tests if two line segments intersect.
+ *
+ * @param {number} ax1 - Start X of segment A.
+ * @param {number} ay1 - Start Y of segment A.
+ * @param {number} ax2 - End X of segment A.
+ * @param {number} ay2 - End Y of segment A.
+ * @param {number} bx1 - Start X of segment B.
+ * @param {number} by1 - Start Y of segment B.
+ * @param {number} bx2 - End X of segment B.
+ * @param {number} by2 - End Y of segment B.
+ * @returns {boolean} True if the segments intersect.
+ */
 export function segmentsIntersect(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
     const d1x = ax2 - ax1, d1y = ay2 - ay1;
     const d2x = bx2 - bx1, d2y = by2 - by1;
@@ -149,6 +236,19 @@ export function segmentsIntersect(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2) {
     const u = (dx * d1y - dy * d1x) / inters;
     return (t >= 0 && t <= 1 && u >= 0 && u <= 1);
 }
+
+/**
+ * Tests if a line segment intersects a circle.
+ *
+ * @param {number} x1 - Start X of the segment.
+ * @param {number} y1 - Start Y of the segment.
+ * @param {number} x2 - End X of the segment.
+ * @param {number} y2 - End Y of the segment.
+ * @param {number} cx - Center X of the circle.
+ * @param {number} cy - Center Y of the circle.
+ * @param {number} r - Radius of the circle.
+ * @returns {boolean} True if the segment intersects the circle.
+ */
 
 export function segmentIntersectsCircle(x1, y1, x2, y2, cx, cy, r) {
     const dx = x2 - x1;
@@ -170,6 +270,14 @@ export function segmentIntersectsCircle(x1, y1, x2, y2, cx, cy, r) {
     return (t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1);
 }
 
+/**
+ * Tests if a line or circle intersects with or is contained within a polygon.
+ * Used for lasso selection to determine which shapes to select.
+ *
+ * @param {object} line - The line or circle object to test.
+ * @param {Array<number>} polygon - The lasso polygon as a flat array of vertices.
+ * @returns {boolean} True if the shape intersects or is inside the polygon.
+ */
 export function lineIntersectsOrInsidePolygon(line, polygon) {
     if (line.type === 'circle') {
         const { x_center, y_center, radius } = computeCircleData(line.points);
@@ -215,6 +323,13 @@ export function lineIntersectsOrInsidePolygon(line, polygon) {
     return false;
 }
 
+/**
+ * Computes the axis-aligned bounding box for a set of lines, accounting for rotation and offsets.
+ * Used to display the selection box around selected shapes.
+ *
+ * @param {Array} lines - Array of selected line objects.
+ * @returns {object} The bounding box {x, y, width, height} with padding.
+ */
 export function computeSelectionBBox(lines) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity; // just js things
 
@@ -281,6 +396,14 @@ export function computeSelectionBBox(lines) {
     };
 }
 
+/**
+ * Translates all points in a flat point array by the specified delta.
+ *
+ * @param {Array<number>} points - Flat array [x1, y1, x2, y2, ...].
+ * @param {number} dx - Horizontal translation.
+ * @param {number} dy - Vertical translation.
+ * @returns {Array<number>} The translated flat point array.
+ */
 export function translatePoints(points, dx, dy) {
     const result = new Array(points.length);
     for (let i = 0; i < points.length; i += 2) {
@@ -290,6 +413,16 @@ export function translatePoints(points, dx, dy) {
     return result;
 }
 
+/**
+ * Rotates a point around a given center by a specified angle.
+ *
+ * @param {number} px - X coordinate of the point.
+ * @param {number} py - Y coordinate of the point.
+ * @param {number} cx - X coordinate of the rotation center.
+ * @param {number} cy - Y coordinate of the rotation center.
+ * @param {number} angleDeg - The rotation angle in degrees.
+ * @returns {object} The rotated point {x, y}.
+ */
 export function rotatePoint (px, py, cx, cy, angleDeg) {
     const rad = (angleDeg * Math.PI) / 180;
     const cos = Math.cos(rad);
@@ -302,6 +435,15 @@ export function rotatePoint (px, py, cx, cy, angleDeg) {
     };
 };
 
+
+/**
+ * Determines the appropriate CSS cursor for a resize handle based on its position
+ * and the current rotation of the selection box.
+ *
+ * @param {string} handleId - The handle identifier (e.g., 'top-left', 'bottom').
+ * @param {number} boxRot - The rotation angle of the selection box in degrees.
+ * @returns {string} The CSS cursor value (e.g., 'nwse-resize', 'ew-resize').
+ */
 export function getDynamicCursor(handleId, boxRot) {
     
         const baseAngles = {
@@ -331,8 +473,16 @@ export function getDynamicCursor(handleId, boxRot) {
     };
 
 /**
- * why did i decide to encode it
+ * A: why did i decide to encode it | F: can't be good if you're the one who made this are asking that... 
  * Format: [count: uint16] per cursor: [idLen: uint8][id: utf8][x: float32][y: float32][nameLen: uint8][name: utf8]
+ */
+/**
+ * Decodes a binary buffer containing batched cursor position updates.
+ *
+ * Format: [count: uint16] per cursor: [idLen: uint8][id: utf8][x: float32][y: float32][nameLen: uint8][name: utf8]
+ *
+ * @param {ArrayBuffer|Buffer} buffer - The binary buffer to decode.
+ * @returns {Array<object>} An array of cursor update objects: { socketId, x, y, username }.
  */
 export function decodeCursorBatch(buffer) {
     const view = new DataView(buffer);

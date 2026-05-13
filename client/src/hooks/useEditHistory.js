@@ -2,6 +2,38 @@ import { useRef, useEffect, useCallback } from "react";
 import { NUM_MAX_UNDO } from "../utils/boardConstants";
 import { translatePoints } from "../utils/boardUtils";
 
+/**
+ * Manages the undo/redo history, clipboard operations, and edit actions for the board.
+ *
+ * This hook tracks a history stack of edit operations (draw, erase, drag, resize, rotate,
+ * modify selection, paste) and provides methods to undo and redo them. It also handles
+ * copy, paste, delete, and selection modification actions, emitting corresponding socket
+ * events to synchronize changes with other collaborators. Keyboard shortcuts for
+ * Ctrl/Cmd+Z (undo), Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y (redo), Ctrl/Cmd+C (copy),
+ * Ctrl/Cmd+V (paste), Delete/Backspace (delete selection) are registered globally.
+ *
+ * @param {object} params - Hook parameters.
+ * @param {function} params.setEditHistory - Sets the edit history state ({ history, editIndex }).
+ * @param {function} params.setLines - Sets the complete lines array on the board.
+ * @param {React.MutableRefObject} params.socketRef - Ref to the active socket connection.
+ * @param {React.MutableRefObject<Array>} params.linesRef - Ref to the current lines array.
+ * @param {boolean} params.canDraw - Whether the user has permission to edit the board.
+ * @param {React.MutableRefObject<Array<string>>} params.selectedIdsRef - Ref to the array of selected line IDs.
+ * @param {Array<string>} params.selectedIds - The currently selected line IDs (state).
+ * @param {function} params.clearSelection - Clears the current selection.
+ * @param {React.RefObject} params.stageRef - Ref to the Konva Stage instance.
+ * @param {function} params.setIsOpenContextMenu - Sets the context menu open state.
+ * @param {function} params.sortLinesByTime - Function to sort lines array by creation time.
+ * @returns {object} An object containing:
+ *   - handleUndo: Function to perform an undo action.
+ *   - handleRedo: Function to perform a redo action.
+ *   - handleCopy: Function to copy the selected lines to an internal clipboard.
+ *   - handlePaste: Function to paste copied lines at a specified position.
+ *   - handleModifySelection: Function to modify properties (color, fill, width, opacity) of selected lines.
+ *   - handleDeleteSelection: Function to delete all currently selected lines.
+ *   - copiedLinesRef: Ref to the internal clipboard of copied lines.
+ */
+
 export default function useEditHistory({
     setEditHistory, setLines, socketRef, linesRef, canDraw,
     selectedIdsRef, selectedIds, clearSelection, stageRef,
@@ -11,6 +43,15 @@ export default function useEditHistory({
     const numTimesPastedRef = useRef(null);
     const lastPastePosRef = useRef({ x: 0, y: 0 });
 
+    /**
+     * Modifies the stroke color, fill color, stroke width, and/or opacity of all selected lines.
+     * Records the change in the edit history and emits the updated lines to other users.
+     *
+     * @param {string|null} newBrushColor - The new stroke color hex value, or null to keep unchanged.
+     * @param {string|null} newFillColor - The new fill color hex value, or null to keep unchanged.
+     * @param {number|null} newStrokeWidth - The new stroke width, or null to keep unchanged.
+     * @param {number|null} newOpacity - The new opacity value, or null to keep unchanged.
+     */
     const handleModifySelection = useCallback((newBrushColor, newFillColor, newStrokeWidth, newOpacity) => {
         if (selectedIdsRef.current.length === 0) return;
 
@@ -51,6 +92,10 @@ export default function useEditHistory({
         socketRef.current?.emit('board:draw:modify_selection', linePairs.map(entry => entry.new_line));
     }, [selectedIdsRef, linesRef, setEditHistory, socketRef, setLines, sortLinesByTime]);
 
+    /**
+     * Deletes all currently selected lines.
+     * Records a 'group_erase' entry in edit history and emits the deletion to other users.
+     */
     const handleDeleteSelection = useCallback(() => {
         if (selectedIdsRef.current.length === 0) return;
 
@@ -78,6 +123,7 @@ export default function useEditHistory({
         clearSelection();
     }, [clearSelection, socketRef, setLines, setEditHistory, selectedIdsRef, linesRef]);
 
+    // registers a global keydown listener for Delete/Backspace to delete selected lines
     useEffect(() => {
         const onKeyDown = (e) => {
             if (!canDraw) return;
@@ -91,6 +137,12 @@ export default function useEditHistory({
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [selectedIds, handleDeleteSelection]);
 
+    /**
+     * Performs an undo operation.
+     * Reverts the most recent edit from the history stack based on its operation type
+     * (draw, erase, drag, rotate, resize, modify_selection, group_erase, paste).
+     * Emits the corresponding undo socket event to synchronize with other users.
+     */
     const handleUndo = useCallback(() => {
         setIsOpenContextMenu(false);
         setEditHistory((prevHistory) => {
@@ -139,6 +191,11 @@ export default function useEditHistory({
         });
     }, [clearSelection, socketRef, setLines, setIsOpenContextMenu, setEditHistory, sortLinesByTime]);
 
+     /**
+     * Performs a redo operation.
+     * Re-applies the next undone edit from the history stack based on its operation type.
+     * Emits the corresponding redo socket event to synchronize with other users.
+     */
     const handleRedo = useCallback(() => {
         setIsOpenContextMenu(false);
         setEditHistory((prevHistory) => {
@@ -183,6 +240,12 @@ export default function useEditHistory({
         });
     }, [clearSelection, socketRef, setLines, setIsOpenContextMenu, setEditHistory, sortLinesByTime]);
 
+    /**
+     * Copies the currently selected lines to an internal clipboard.
+     * The selection is cleared if the copy was triggered from the context menu.
+     *
+     * @param {boolean} [clickedFromMenu=false] - Whether the copy was initiated from a menu click.
+     */
     const handleCopy = useCallback((clickedFromMenu = false) => {
         if (!selectedIdsRef.current?.length > 0) return;
         if (clickedFromMenu) clearSelection();
@@ -190,6 +253,12 @@ export default function useEditHistory({
         copiedLinesRef.current = linesRef.current?.filter(l => selectedIdsRef.current.includes(l.id));
     }, [clearSelection, selectedIdsRef, linesRef]);
 
+    /**
+     * Pastes the copied lines at the current pointer position or a specified override position.
+     * An offset is applied to successive pastes in the same area to prevent overlapping.
+     *
+     * @param {object|null} [overridePos=null] - An optional {x, y} position override.
+     */
     const handlePaste = useCallback((overridePos = null) => {
         if (!copiedLinesRef.current?.length) return;
 
@@ -245,6 +314,7 @@ export default function useEditHistory({
         clearSelection();
     }, [clearSelection, setLines, stageRef, setEditHistory, socketRef]);
 
+    // registers global keyboard shortcuts for undo, redo, copy, and paste
     useEffect(() => {
         const handleShortcuts = (e) => {
             if (!canDraw) return;

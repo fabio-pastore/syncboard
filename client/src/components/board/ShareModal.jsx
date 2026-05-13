@@ -2,6 +2,24 @@ import { useState } from "react";
 import { Share2, Copy, Check, UserPlus, X, Users, Download, FileText } from "lucide-react";
 import { apiFetch } from "../../api";
 
+/**
+ * A modal dialog for sharing the board, managing access, and exporting.
+ *
+ * Allows generating one-time viewer/editor links, permanently sharing with
+ * specific users, viewing/revoking current access, and exporting the board
+ * as PNG or PDF.
+ *
+ * @param {object} props - Component props.
+ * @param {object} props.board - The current board data, including sharedWith list.
+ * @param {function} props.setBoard - Callback to update the board state.
+ * @param {string} props.boardId - The ID of the current board.
+ * @param {Array} props.lines - All lines on the board (for export).
+ * @param {function} props.onClose - Callback to close the modal.
+ * @param {function} props.onExportPng - Callback to trigger PNG export.
+ * @param {function} props.onExportPdf - Callback to trigger PDF export.
+ * @returns {JSX.Element} The share modal component.
+ */
+
 export default function ShareModal({ board, setBoard, boardId, lines, onClose, onExportPng, onExportPdf }) {
     const [shareUrl, setShareUrl] = useState("");
     const [copied, setCopied] = useState(false);
@@ -9,6 +27,12 @@ export default function ShareModal({ board, setBoard, boardId, lines, onClose, o
     const [shareUserRole, setShareUserRole] = useState('viewer');
     const [shareUserMsg, setShareUserMsg] = useState('');
 
+    /**
+     * Generates a one-time share link for the board with the specified role.
+     *
+     * @param {string} linkRole - The role for the link ('viewer' or 'editor').
+     * @returns {Promise<void>}
+     */
     async function generateShareLink(linkRole) {
         try {
             const data = await apiFetch(`/boards/${boardId}/share`, {
@@ -21,6 +45,12 @@ export default function ShareModal({ board, setBoard, boardId, lines, onClose, o
         }
     }
 
+    /**
+     * Permanently shares the board with a specific user by username.
+     *
+     * @param {Event} e - The form submit event.
+     * @returns {Promise<void>}
+     */
     async function shareWithUser(e) {
         e.preventDefault();
         if (!shareUsername.trim()) return;
@@ -45,6 +75,12 @@ export default function ShareModal({ board, setBoard, boardId, lines, onClose, o
         }
     }
 
+    /**
+     * Removes a user's access to the board.
+     *
+     * @param {string} userId - The ID of the user to remove.
+     * @returns {Promise<void>}
+     */
     async function removeSharedUser(userId) {
         try {
             await apiFetch(`/boards/${boardId}/share/user/${userId}`, { method: 'DELETE' });
@@ -54,6 +90,14 @@ export default function ShareModal({ board, setBoard, boardId, lines, onClose, o
         }
     }
 
+    /**
+     * Copies the generated share link to the clipboard.
+     *
+     * Uses the modern `navigator.clipboard` API if available in a secure context,
+     * otherwise falls back to a legacy method using a temporary textarea.
+     *
+     * @returns {Promise<void>}
+     */
     async function copyLink() {
         if (!shareUrl) return;
 
@@ -88,6 +132,9 @@ export default function ShareModal({ board, setBoard, boardId, lines, onClose, o
         }
     }
 
+    /**
+     * Resets state and calls the onClose callback to close the modal.
+     */
     function handleClose() {
         setShareUrl('');
         setShareUserMsg('');

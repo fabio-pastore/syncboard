@@ -6,7 +6,15 @@ const authMiddleware = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
-// Build the full path for a folder by walking up the parent chain
+/**
+ * Builds the full path string for a folder by walking up the parent chain.
+ * E.g., "Root Folder / Sub Folder / Current Folder".
+ *
+ * @async
+ * @function buildFolderPath
+ * @param {string} folderId - The ID of the folder to build the path for.
+ * @returns {Promise<string>} The constructed folder path string.
+ */
 async function buildFolderPath(folderId) {
     const parts = [];
     let current = await Folder.findById(folderId).select('name parent');
@@ -17,7 +25,18 @@ async function buildFolderPath(folderId) {
     return parts.join(' / ');
 }
 
-// GET /api/search?q=term
+/**
+ * GET /api/search
+ *
+ * Performs a case-insensitive search across folders and boards based on the provided query term.
+ * Searches folder names and board names that the user owns or has access to.
+ * Returns the matching folders and boards along with their constructed paths.
+ *
+ * @name GET /api/search
+ * @function
+ * @param {string} q - The search query term.
+ * @returns {object} JSON object containing arrays of matched `folders` and `boards`.
+ */
 router.get('/', async (req, res) => {
     try {
         const q = (req.query.q || '').trim();

@@ -1,3 +1,15 @@
+/**
+ * Displays a chat message sent by the current user.
+ *
+ * Renders "You" as the sender, a timestamp, and the message body in a styled
+ * bubble aligned to the right of the chat panel.
+ *
+ * @param {object} props - Component props.
+ * @param {string} props.time - The formatted time the message was sent.
+ * @param {string} props.body - The text content of the message.
+ * @returns {JSX.Element} The sent message UI element.
+ */
+
 export default function SentMessage({time, body}) {
     return (
     <div className="flex flex-col w-full min-w-0 space-y-1">

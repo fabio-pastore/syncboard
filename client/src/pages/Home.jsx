@@ -4,6 +4,16 @@ import { Users, FolderOpen, PenTool, ArrowRight } from 'lucide-react';
 import whiteboardImg from '../assets/whiteboard.jpg';
 // we need to make it a webp because 80kb of jpg each time pages load is crazy
 
+/**
+ * The public landing page for unauthenticated users.
+ *
+ * Features a hero section with a parallax 3D board preview, a "Features" section
+ * highlighting key capabilities, a "How it works" step-by-step guide, and a
+ * call-to-action to sign up. The navigation bar becomes solid on scroll.
+ *
+ * @returns {JSX.Element} The home page component.
+ */
+
 export default function Home() {
     const [scrollY, setScrollY] = useState(0);
     const [navSolid, setNavSolid] = useState(false);
@@ -11,6 +21,11 @@ export default function Home() {
 
     useEffect(() => {
         let ticking = false;
+        /**
+         * Handles the scroll event with requestAnimationFrame throttling.
+         * Updates the scroll position state and toggles the nav solid state
+         * when scrolled past 40px.
+         */
         function onScroll() {
             if (!ticking) {
                 requestAnimationFrame(() => {
@@ -33,6 +48,7 @@ export default function Home() {
     return (
         <div className="min-h-screen bg-white text-gray-700 overflow-x-hidden">
 
+            {/* Navigation Bar - Transparent at top, solid on scroll */}
             <nav
                 className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
                     navSolid
@@ -71,8 +87,10 @@ export default function Home() {
             </nav>
 
 
+            {/* Hero Section with Parallax Board Preview */}
             <section className="relative pt-32 pb-20 md:pt-40 md:pb-32">
 
+                {/* Decorative background blurs */}
                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
                     <div className="absolute -top-40 -right-40 w-[500px] h-[500px] bg-violet-100 rounded-full blur-3xl opacity-40" />
                     <div className="absolute -bottom-40 -left-40 w-[500px] h-[500px] bg-violet-50 rounded-full blur-3xl opacity-50" />
@@ -147,6 +165,7 @@ export default function Home() {
                 </div>
             </section>
 
+            {/* Features Grid Section */}
             <section id="features" className="py-20 md:py-28 bg-gray-50/60">
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="text-center mb-14">
@@ -198,6 +217,7 @@ export default function Home() {
                 </div>
             </section>
 
+            {/* How It Works Section */}
             <section id="how" className="py-20 md:py-28">
                 <div className="max-w-6xl mx-auto px-6">
                     <div className="text-center mb-14">
@@ -227,6 +247,7 @@ export default function Home() {
                 </div>
             </section>
 
+            {/* Call to Action Section */}
             <section className="py-20 md:py-28 bg-gray-50/60">
                 <div className="max-w-2xl mx-auto px-6 text-center">
                     <h2 className="text-3xl md:text-4xl font-semibold text-gray-900">
@@ -253,6 +274,7 @@ export default function Home() {
                 </div>
             </section>
 
+            {/* Footer */}
             <footer className="border-t border-gray-100 py-8">
                 <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
                     <span className="font-medium">

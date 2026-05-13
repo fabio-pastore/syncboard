@@ -4,6 +4,23 @@ import { RgbaToHex } from '../../utils/boardUtils';
 import { INPUT_UPDATE_INTERVAL } from '../../utils/boardConstants';
 import LocalColorPicker from './LocalColorPicker';
 
+/**
+ * A context menu for modifying, copying, or deleting the current selection.
+ *
+ * Provides quick access to brush color, fill color, stroke width, and opacity
+ * adjustments for all selected shapes. Changes are debounced to avoid excessive
+ * updates.
+ *
+ * @param {object} props - Component props.
+ * @param {boolean} props.visible - Whether the menu is displayed.
+ * @param {object} props.position - The {x, y} screen position for the menu.
+ * @param {Array} props.selectedLines - The currently selected line objects.
+ * @param {function} props.onCopy - Callback for the copy action.
+ * @param {function} props.onDelete - Callback for the delete action.
+ * @param {function} props.onModify - Callback fired with newBrush, newFill, newWidth, newOpacity.
+ * @returns {JSX.Element} The selection context menu UI.
+ */
+
 export default function SelectionContextMenu({ visible, position, selectedLines, onCopy, onDelete, onModify }) {
     const [modifiedBrushColor, setModifiedBrushColor] = useState(null);
     const [modifiedFillColor, setModifiedFillColor] = useState(null);

@@ -2,6 +2,16 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+/**
+ * The login page component.
+ *
+ * Provides a form for users to sign in using their email/username and password.
+ * On successful login, redirects to the dashboard. Displays error messages for
+ * failed attempts and a loading spinner during the authentication process.
+ *
+ * @returns {JSX.Element} The login page.
+ */
+
 export default function Login() {
     const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
@@ -10,6 +20,13 @@ export default function Login() {
     const { login } = useAuth();
     const navigate = useNavigate();
 
+    /**
+     * Handles the login form submission.
+     * Attempts to authenticate the user with the provided credentials.
+     *
+     * @param {Event} e - The form submit event.
+     * @returns {Promise<void>}
+     */
     async function handleSubmit(e) {
         e.preventDefault();
         setError('');
@@ -28,6 +45,7 @@ export default function Login() {
     return (
         <div className="min-h-screen flex items-center justify-center bg-white px-4">
 
+            {/* Decorative background blurs */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute -top-40 -right-40 w-96 h-96 bg-violet-100 rounded-full blur-3xl opacity-40" />
                 <div className="absolute -bottom-40 -left-40 w-96 h-96 bg-violet-50 rounded-full blur-3xl opacity-50" />
@@ -35,6 +53,7 @@ export default function Login() {
 
             <div className="w-full max-w-sm relative z-10">
 
+                {/* Logo and Tagline */}
                 <div className="text-center mb-8">
                     <Link to="/" className="text-3xl font-semibold select-none">
                         <span className="text-violet-600">Sync</span>
@@ -43,6 +62,7 @@ export default function Login() {
                     <p className="text-gray-400 text-sm mt-2">The collaborative whiteboard</p>
                 </div>
 
+                {/* Login Form */}
                 <form
                     onSubmit={handleSubmit}
                     className="w-full flex flex-col gap-5 bg-white border border-gray-200 rounded-2xl p-8 shadow-sm"

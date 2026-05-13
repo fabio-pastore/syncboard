@@ -5,6 +5,22 @@
 import { useState, useEffect, useRef } from "react";
 import { INPUT_UPDATE_INTERVAL } from "../../utils/boardConstants";
 
+/**
+ * A performance-optimized color picker component.
+ *
+ * Uses local state to immediately reflect UI changes, debouncing updates to the
+ * parent component. This prevents performance degradation caused by rapid
+ * re-renders of a heavy parent component when the user drags the color slider.
+ * It also ensures the final color is committed if the component unmounts.
+ *
+ * @param {object} props - Component props.
+ * @param {string} props.value - The current color value from the parent component.
+ * @param {function} props.onChange - Callback fired with the new color after the debounce interval.
+ * @param {string} props.title - Title attribute for the color input.
+ * @param {string} [props.className="w-6 h-6"] - CSS class for the container label.
+ * @returns {JSX.Element} The color picker label and input.
+ */
+
 export default function LocalColorPicker({ value, onChange, title, className = "w-6 h-6" }) {
     const [localColor, setLocalColor] = useState(value);
     const lastPushedValue = useRef(value);

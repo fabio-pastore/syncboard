@@ -14,6 +14,20 @@ const authMiddleware = require('./middleware/auth');
 
 const app = express();
 const server = http.createServer(app);
+
+/**
+ * @fileoverview Main server entry point for SyncBoard.
+ * Establishes an Express + Socket.io server with MongoDB persistence.
+ * Manages real-time collaborative board sessions, cursor broadcasting,
+ * and batched database writes for optimal performance.
+ */
+
+/**
+ * Allowed CORS origins for the server.
+ * Loaded from the CLIENT_ORIGIN environment variable, split by commas,
+ * with a fallback to the default Vite dev server URL.
+ * @type {string[]}
+ */
 const allowedOrigins = process.env.CLIENT_ORIGIN
     ? process.env.CLIENT_ORIGIN.split(',')
     : ['http://localhost:5173'];
@@ -27,17 +41,36 @@ const BoardLine = require('./models/BoardLine');
 const User = require('./models/Users');
 
 // trying to keep stuff in memory as trade-off for bandwidth usage
-const peerMap = new Map();              // roomId -> Map<socketId, {username, profilePicture, userId, role, isShareToken, isOwner}>
-const cursorState = new Map();          // roomId -> Map<socketId, {x, y, username, viewport}>
-const writeBuffer = new Map();          // roomId -> Array<{action, ...}>
-const cursorBroadcastTimers = new Map();// roomId -> intervalId
+
+/** Maps roomId to a Map of socketId -> peer metadata. */
+
+const peerMap = new Map();                  // roomId -> Map<socketId, {username, profilePicture, userId, role, isShareToken, isOwner}> 
+
+/** Maps roomId to a Map of socketId -> cursor state {x, y, username, viewport}. */
+
+const cursorState = new Map();              // roomId -> Map<socketId, {x, y, username, viewport}>
+
+/** Maps roomId to an array of pending database write operations. */
+
+const writeBuffer = new Map();              // roomId -> Array<{action, ...}>
+
+/** Maps roomId to the interval timer for cursor broadcast. */
+
+const cursorBroadcastTimers = new Map();    // roomId -> intervalId
 
 const CURSOR_BROADCAST_INTERVAL = 16;   
 const WRITE_FLUSH_INTERVAL = 500;       // batch DB writes every 500 ms
 const VIEWPORT_PADDING = 500;           // padding around viewport
 
-// encoding cursor in binary to save bandwidth
-function encodeCursorBatch(updates) {
+/**
+ * Encodes an array of cursor updates into a binary buffer for efficient network transfer.
+ *
+ * Binary format: [count: uint16] per cursor: [idLen: uint8][id: utf8][x: float32][y: float32][nameLen: uint8][name: utf8]
+ *
+ * @param {Array<object>} updates - Array of {socketId, username, x, y}.
+ * @returns {Buffer} The encoded binary buffer.
+ */
+function encodeCursorBatch(updates) { // encoding cursor in binary to save bandwidth
     const encoded = updates.map(u => {
         const idBuf = Buffer.from(u.socketId, 'utf8');
         const nameBuf = Buffer.from(u.username || '', 'utf8');
@@ -75,6 +108,13 @@ function encodeCursorBatch(updates) {
     return buffer;
 }
 
+/**
+ * Starts the periodic cursor broadcast timer for a room.
+ * Every CURSOR_BROADCAST_INTERVAL ms, sends a binary batch of cursor positions
+ * to each connected user, filtering out cursors outside their viewport.
+ *
+ * @param {string} roomId - The board room ID.
+ */
 function startCursorBroadcast(roomId) {
     if (cursorBroadcastTimers.has(roomId)) return;
 
@@ -121,6 +161,14 @@ function startCursorBroadcast(roomId) {
     cursorBroadcastTimers.set(roomId, timer);
 }
 
+
+/**
+ * Deduplicates the write buffer by keeping only the latest operation per line ID.
+ * Resolves conflicts where multiple writes to the same line occur within a flush cycle.
+ *
+ * @param {Array<object>} buffer - Array of write operations.
+ * @returns {Array<object>} The deduplicated array of operations.
+ */
 function deduplicateBuffer(buffer) {
     const lineOps = new Map(); // lineId -> last operation
 
@@ -149,6 +197,13 @@ function deduplicateBuffer(buffer) {
     return Array.from(lineOps.values());
 }
 
+/**
+ * Flushes the write buffer for a room, performing a bulk write to MongoDB.
+ * Deduplicates operations and uses upsert for line data to ensure consistency.
+ *
+ * @param {string} roomId - The board room ID.
+ * @returns {Promise<void>}
+ */
 async function flushWriteBuffer(roomId) {
     const raw = writeBuffer.get(roomId);
     if (!raw || raw.length === 0) return;
@@ -184,6 +239,9 @@ async function flushWriteBuffer(roomId) {
     }
 }
 
+/**
+ * Periodic interval that flushes write buffers for all active rooms.
+ */
 setInterval(() => {
     for (const [roomId] of writeBuffer) {
         flushWriteBuffer(roomId).catch(() => {});
@@ -193,6 +251,43 @@ setInterval(() => {
 app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 
+/**
+ * Calculates unique connected peers to avoid duplicate tab counting.
+ * Groups by userId if available, otherwise treats sockets as unique guests.
+ */
+function getUniquePeers(roomId) {
+    const peers = peerMap.get(roomId);
+    if (!peers) return { count: 0, connectedPeers: [] };
+
+    const uniqueUsers = new Map();
+    const guestPeers = [];
+
+    for (const peer of peers.values()) {
+        if (peer.userId) {
+            // This ensures a user with 5 tabs only gets added to this Map once
+            uniqueUsers.set(peer.userId.toString(), {
+                username: peer.username,
+                pfp: peer.profilePicture
+            });
+        } else {
+            // Fallback for share token guests without accounts
+            guestPeers.push({
+                username: peer.username,
+                pfp: peer.profilePicture
+            });
+        }
+    }
+
+    const connectedPeers = [...uniqueUsers.values(), ...guestPeers];
+    return {
+        count: connectedPeers.length,
+        connectedPeers
+    };
+}
+
+/**
+ * Middleware to attach the Socket.io instance to every request object.
+ */
 app.use((req, res, next) => {
     req.io = io;
     next();
@@ -200,6 +295,10 @@ app.use((req, res, next) => {
 
 app.use('/api/auth', authRoutes);
 
+/**
+ * GET /api/boards/share/:token
+ * Fetches a shared board by its access token, including the assigned role and full content.
+ */
 app.get('/api/boards/share/:token', authMiddleware, async (req, res) => {
     try {
         const board = await Board.findOne({ 'shareTokens.token': req.params.token });
@@ -222,6 +321,9 @@ app.use('/api/user', userRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api/search', searchRoutes);
 
+/**
+ * Connects to MongoDB and starts the HTTP server on the configured port.
+ */
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
         console.log('Successfully connected to MongoDB database');
@@ -246,6 +348,14 @@ io.on('connection', (socket) => {
         } catch (err) { /** invalid token */ }
     }
 
+    /**
+     * Handles a client joining a board room.
+     * Verifies access (owner, shared with, or share token), joins the Socket.io room,
+     * loads board data and active lines from the database, and notifies all peers.
+     *
+     * @param {object} payload - The join payload.
+     * @param {string} payload.boardId - The ID of the board to join.
+     */
     socket.on('board:join', async ({ boardId }) => {
         try {
             let board, role;
@@ -285,17 +395,6 @@ io.on('connection', (socket) => {
             if (!peerMap.has(roomId)) peerMap.set(roomId, new Map());
             const roomPeers = peerMap.get(roomId);
 
-            if (userId) {
-                for (const [sid, peer] of roomPeers) {
-                    if (peer.userId && peer.userId.toString() === userId.toString()) {
-                        roomPeers.delete(sid);
-                        const staleCursors = cursorState.get(roomId);
-                        if (staleCursors) staleCursors.delete(sid);
-                        break;
-                    }
-                }
-            }
-
             roomPeers.set(socket.id, {
                 username: joinedUser.username,
                 profilePicture: joinedUser.profileImage,
@@ -324,12 +423,7 @@ io.on('connection', (socket) => {
 
             const lines = lineDocs.map((doc) => doc.data);
 
-            const peers = peerMap.get(roomId);
-            const peerCount = peers.size;
-            const connectedPeers = Array.from(peers.values()).map((p) => ({
-                username: p.username,
-                pfp: p.profilePicture,
-            }));
+            const { count: peerCount, connectedPeers } = getUniquePeers(roomId);
 
             socket.emit('board:load', { lines, count: peerCount, connectedPeers, role, bgType: bgType, bgColor: bgColor });
             io.to(roomId).emit('board:peers', { count: peerCount, connectedPeers });
@@ -339,7 +433,9 @@ io.on('connection', (socket) => {
         }
     });
 
-    
+    /**
+     * Receives a cursor position update from a client and stores it in memory.
+     */
     socket.on('board:cursor:move', ({ x, y, viewport }) => {
         const roomId = socket.data.boardId;
         if (!roomId) return;
@@ -354,6 +450,10 @@ io.on('connection', (socket) => {
         });
     });
 
+    /**
+     * Handles background type/color changes from an editor.
+     * Broadcasts the change to all other peers and persists it to the database.
+     */
     socket.on('board:bg:modify', async ({ newType, newColor }) => { 
         if (!newType && !newColor) return;
         const roomId = socket.data.boardId;
@@ -378,6 +478,10 @@ io.on('connection', (socket) => {
         }
     });
 
+    /**
+     * Handles a completed drawing line from an editor.
+     * Broadcasts to all peers and queues a write to the database.
+     */
     socket.on('board:draw:line', (line) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -387,12 +491,20 @@ io.on('connection', (socket) => {
         writeBuffer.get(roomId).push({ action: 'upsertLine', data: line });
     });
 
+    /**
+     * Handles a temporary (in-progress) line update from an editor.
+     * Broadcasts to all peers but does not persist to the database.
+     */
     socket.on('board:draw:tmpline', (lineData) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:tmpline', lineData);
     });
 
+    /**
+     * Handles erasing a single line from an editor.
+     * Broadcasts to all peers and queues a delete in the database.
+     */
     socket.on('board:draw:erase', (lineId) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -402,6 +514,10 @@ io.on('connection', (socket) => {
         writeBuffer.get(roomId).push({ action: 'deleteLine', lineId });
     });
 
+    /**
+     * Handles a selection modification (color, width, opacity) from an editor.
+     * Broadcasts the updated lines to all peers and queues a database write.
+     */
     socket.on('board:draw:modify_selection', (modifiedLines) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -411,24 +527,37 @@ io.on('connection', (socket) => {
         writeBuffer.get(roomId).push({ action: 'upsertLines', lines: modifiedLines });
     });
 
+    /**
+     * Handles temporary drag updates from an editor for collaborative preview.
+     */
     socket.on('board:draw:tmpdrag', (draggedLines) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:group_drag', draggedLines);
     });
 
+    /**
+     * Handles temporary rotation updates from an editor for collaborative preview.
+     */
     socket.on('board:draw:tmprotate', (rotatedLines) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:group_rotate', rotatedLines);
     });
 
+    /**
+     * Handles temporary resize updates from an editor for collaborative preview.
+     */
     socket.on('board:draw:tmpresize', (resizedLines) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
         socket.to(roomId).emit('board:draw:group_resize', resizedLines);
     });
 
+    /**
+     * Handles a completed group drag from an editor.
+     * Broadcasts the final positions to all peers and queues a database write.
+     */
     socket.on('board:draw:group_drag', (draggedLines) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -438,6 +567,10 @@ io.on('connection', (socket) => {
         writeBuffer.get(roomId).push({ action: 'upsertLines', lines: draggedLines });
     });
 
+    /**
+     * Handles a completed group rotation from an editor.
+     * Broadcasts the final angles to all peers and queues a database write.
+     */
     socket.on('board:draw:group_rotate', (rotatedLines) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -447,6 +580,10 @@ io.on('connection', (socket) => {
         writeBuffer.get(roomId).push({ action: 'upsertLines', lines: rotatedLines });
     });
 
+    /**
+     * Handles a completed group resize from an editor.
+     * Broadcasts the final dimensions to all peers and queues a database write.
+     */
     socket.on('board:draw:group_resize', (resizedLines) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -456,6 +593,10 @@ io.on('connection', (socket) => {
         writeBuffer.get(roomId).push({ action: 'upsertLines', lines: resizedLines });
     });
 
+    /**
+     * Handles erasing multiple selected lines from an editor.
+     * Broadcasts the erased IDs to all peers and queues database deletes.
+     */
     socket.on('board:draw:group_erase', (erasedIds) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -465,6 +606,10 @@ io.on('connection', (socket) => {
         writeBuffer.get(roomId).push({ action: 'deleteLines', lineIds: erasedIds });
     });
 
+    /**
+     * Handles a paste operation from an editor.
+     * Broadcasts the new lines to all peers and queues database inserts.
+     */
     socket.on('board:draw:paste', (linesToAdd) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -474,6 +619,11 @@ io.on('connection', (socket) => {
         writeBuffer.get(roomId).push({ action: 'addLines', lines: linesToAdd });
     });
 
+    /**
+     * Handles an undo operation from an editor.
+     * Broadcasts the undo to all peers and queues the necessary database operations
+     * to reverse the most recent edit.
+     */
     socket.on('board:draw:undo', ({ lineId, op, line }) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -506,6 +656,11 @@ io.on('connection', (socket) => {
         }
     });
 
+    /**
+     * Handles a redo operation from an editor.
+     * Broadcasts the redo to all peers and queues the necessary database operations
+     * to re-apply the most recently undone edit.
+     */
     socket.on('board:draw:redo', ({ lineId, op, line }) => {
         const roomId = socket.data.boardId;
         if (!roomId || socket.data.role !== 'editor') return;
@@ -538,12 +693,22 @@ io.on('connection', (socket) => {
         }
     });
 
+    /**
+     * Handles a chat message from a user.
+     * Broadcasts the message to all other peers in the room.
+     */
     socket.on('chat:send', ({ id, username, time, body }) => {
         const roomId = socket.data.boardId;
         if (!roomId) return;
         socket.to(roomId).emit('chat:send', { id, username, time, body });
     });
 
+    /**
+     * Handles a client disconnecting from the server.
+     * Cleans up the peer map, cursor state, and notifies remaining peers.
+     * If the board owner disconnects and no other owner instance remains,
+     * kicks all users connected via share tokens and revokes all share links.
+     */
     socket.on('disconnect', async () => {
         const roomId = socket.data.boardId;
         if (!roomId) return;
@@ -579,18 +744,13 @@ io.on('connection', (socket) => {
             Board.updateOne({ _id: roomId }, { $pull: { shareTokens: { token: shareToken } } }).catch(() => {});
         }
 
-        const remainingPeers = peerMap.get(roomId);
-        const peerCount = remainingPeers ? remainingPeers.size : 0;
-        const connectedPeers = remainingPeers
-            ? Array.from(remainingPeers.values()).map((p) => ({
-                  username: p.username,
-                  pfp: p.profilePicture,
-              }))
-            : [];
+        const remainingPeersMap = peerMap.get(roomId);
+        const activeSocketsCount = remainingPeersMap ? remainingPeersMap.size : 0;
+        const { count: peerCount, connectedPeers } = getUniquePeers(roomId);
 
         io.to(roomId).emit('board:peers', { count: peerCount, connectedPeers });
 
-        if (peerCount === 0) {
+        if (activeSocketsCount === 0) {
             await flushWriteBuffer(roomId); // persist remaining writes
             peerMap.delete(roomId);
             cursorState.delete(roomId);

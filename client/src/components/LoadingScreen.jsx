@@ -1,3 +1,11 @@
+/**
+ * A full-screen loading indicator displayed during authentication checks or initial app loading.
+ *
+ * Features an animated logo, background geometric shapes, and bouncing dots to indicate activity.
+ *
+ * @returns {JSX.Element} The loading screen UI.
+ */
+
 export default function LoadingScreen() {
     return (
         <div className="fixed inset-0 flex flex-col items-center justify-center bg-white z-[9999] overflow-hidden">
