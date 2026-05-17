@@ -303,6 +303,12 @@ export function lineIntersectsOrInsidePolygon(line, polygon) {
             if (pointInPolygon(line.points[i], line.points[i + 1], polygon)) return true;
         }
 
+        if (line.closed) {
+            for (let j = 0; j < polygon.length; j += 2) {
+                if (pointInPolygon(polygon[j], polygon[j + 1], line.points)) return true;
+            }
+        }
+
         const len = line.points.length;
         const segmentsCount = line.closed ? len : len - 2; 
         
