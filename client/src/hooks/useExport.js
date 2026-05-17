@@ -5,24 +5,69 @@ import { apiFetch } from "../api";
 import { getSmallestRectangle } from "../utils/boardUtils";
 
 /**
- * Adds a temporary white background rectangle to a Konva layer.
- * Used during export to ensure transparent drawings have a solid background.
+ * Adds temporary background elements (color and pattern) to a Konva layer.
+ * Used during export to ensure drawings have the correct background.
  *
- * @param {Konva.Layer} layer - The Konva layer to add the background to.
- * @param {object} box - The bounding box {x, y, width, height} for the background.
- * @returns {Konva.Rect} The created background rectangle.
+ * @param {Konva.Layer} layer - The Konva layer.
+ * @param {object} box - The bounding box {x, y, width, height}.
+ * @param {string} bgColor - The background color.
+ * @param {string} bgPattern - The background pattern type.
+ * @returns {Array} Array of created Konva elements to be destroyed later.
  */
-function addTempBG(layer, box) {
-    const bg = new Konva.Rect({
+function addTempBGElements(layer, box, bgColor, bgPattern) {
+    const tempElements = [];
+
+    if (bgPattern === 'grid') {
+        const gridSize = 40;
+        const startX = Math.floor(box.x / gridSize) * gridSize;
+        for (let x = startX; x <= box.x + box.width; x += gridSize) {
+            const line = new Konva.Line({
+                points: [x, box.y, x, box.y + box.height],
+                stroke: '#d1d5db',
+                strokeWidth: 1,
+            });
+            layer.add(line);
+            line.moveToBottom();
+            tempElements.push(line);
+        }
+        const startY = Math.floor(box.y / gridSize) * gridSize;
+        for (let y = startY; y <= box.y + box.height; y += gridSize) {
+            const line = new Konva.Line({
+                points: [box.x, y, box.x + box.width, y],
+                stroke: '#d1d5db',
+                strokeWidth: 1,
+            });
+            layer.add(line);
+            line.moveToBottom();
+            tempElements.push(line);
+        }
+    } else if (bgPattern === 'lines') {
+        const lineSpacing = 40;
+        const startY = Math.floor(box.y / lineSpacing) * lineSpacing;
+        for (let y = startY; y <= box.y + box.height; y += lineSpacing) {
+            const line = new Konva.Line({
+                points: [box.x, y, box.x + box.width, y],
+                stroke: '#d1d5db',
+                strokeWidth: 1,
+            });
+            layer.add(line);
+            line.moveToBottom();
+            tempElements.push(line);
+        }
+    }
+
+    const bgRect = new Konva.Rect({
         x: box.x,
         y: box.y,
         width: box.width,
         height: box.height,
-        fill: '#ffffff',
+        fill: bgColor || '#ffffff',
     });
-    layer.add(bg);
-    bg.moveToBottom();
-    return bg;
+    layer.add(bgRect);
+    bgRect.moveToBottom();
+    tempElements.push(bgRect);
+
+    return tempElements;
 }
 
 /**
@@ -56,7 +101,10 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         if (!lines.length) return;
         const box = getSmallestRectangle(lines);
         const layer = stageRef.current.findOne('.draw-layer');
-        const bg = addTempBG(layer, box);
+        const tempElements = addTempBGElements(layer, box, bgColor, bgPattern);
+        
+        const oldPos = stageRef.current.position();
+        const oldScale = stageRef.current.scale();
         stageRef.current.position({ x: 0, y: 0 });
         stageRef.current.scale({ x: 1, y: 1 });
         const dataUrl = layer.toDataURL({
@@ -67,7 +115,7 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
             pixelRatio: 2,
             mimeType: 'image/jpeg',
         });
-        bg.destroy();
+        tempElements.forEach(el => el.destroy());
 
         const link = document.createElement('a');
         link.download = `${board?.name || 'board'}.png`;
@@ -75,7 +123,7 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         link.click();
         stageRef.current.position(oldPos);
         stageRef.current.scale(oldScale);
-    }, [lines, board, stageRef]);
+    }, [lines, board, stageRef, bgColor, bgPattern]);
 
     /**
      * Exports the current board content as a PDF file.
@@ -86,7 +134,10 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         if (!lines.length) return;
         const box = getSmallestRectangle(lines);
         const layer = stageRef.current.findOne('.draw-layer');
-        const bg = addTempBG(layer, box);
+        const tempElements = addTempBGElements(layer, box, bgColor, bgPattern);
+        
+        const oldPos = stageRef.current.position();
+        const oldScale = stageRef.current.scale();
         stageRef.current.position({ x: 0, y: 0 });
         stageRef.current.scale({ x: 1, y: 1 });
         const dataUrl = layer.toDataURL({
@@ -97,7 +148,7 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
             pixelRatio: 2,
             mimeType: 'image/jpeg',
         });
-        bg.destroy();
+        tempElements.forEach(el => el.destroy());
 
         const orientation = box.width > box.height ? 'landscape' : 'portrait';
         const pdf = new jsPDF(orientation, 'px', [box.width, box.height]);
@@ -105,7 +156,7 @@ export default function useExport({ stageRef, linesRef, lines, board, id, shared
         pdf.save(`${board?.name || 'board'}.pdf`);
         stageRef.current.position(oldPos);
         stageRef.current.scale(oldScale);
-    }, [lines, board, stageRef]);
+    }, [lines, board, stageRef, bgColor, bgPattern]);
 
     /**
      * Generates a thumbnail data URL of the board content.
