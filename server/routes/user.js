@@ -78,7 +78,7 @@ router.put('/profile', async (req, res) => {
                 return res.status(400).json({ message: 'Username or email already in use' });
             }
         }
-        const user = await User.findByIdAndUpdate(req.userId, updates, { new: true }).select('-passwordHash');
+        const user = await User.findByIdAndUpdate(req.userId, updates, { returnDocument: 'after' }).select('-passwordHash');
         if (!user) return res.status(404).json({ message: 'User not found' });
         res.json(user);
     } catch (err) {

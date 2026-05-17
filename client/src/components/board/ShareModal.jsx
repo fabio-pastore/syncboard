@@ -127,8 +127,7 @@ export default function ShareModal({ board, setBoard, boardId, lines, onClose, o
             setTimeout(() => setCopied(false), 2000);
             
         } catch (err) {
-            console.error("Impossibile copiare il link: ", err);
-            // Opzionale: qui potresti mostrare un toast di errore all'utente
+            console.error("Could not copy link to clipboard: ", err);
         }
     }
 
